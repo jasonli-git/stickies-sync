@@ -1,4 +1,4 @@
-# stickies-sync
+# StickiesSync
 
 Automatic synchronization for Apple's Stickies app. Stickies has no sync of its
 own — a note written on one Mac exists only on that Mac — so StickiesSync runs

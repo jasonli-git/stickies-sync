@@ -120,6 +120,60 @@ struct SyntheticHome {
         StickiesReader.forHome(root)
     }
 
+    func writer() -> ContainerWriter {
+        ContainerWriter.forHome(root)
+    }
+
+    /// A fixed clock, so backup names are predictable in assertions.
+    func backupStore(now: @escaping @Sendable () -> Date = { Date(timeIntervalSince1970: 1_770_000_000) })
+        -> ContainerBackupStore
+    {
+        ContainerBackupStore.forHome(root, now: now)
+    }
+
+    func coordinator(
+        processControl: any StickiesProcessControlling,
+        writer overrideWriter: ContainerWriter? = nil,
+        backupRetention: Int = ApplyCoordinator.defaultBackupRetention
+    ) -> ApplyCoordinator {
+        ApplyCoordinator(
+            directory: stickiesDirectory,
+            reader: reader(),
+            writer: overrideWriter ?? writer(),
+            backups: backupStore(),
+            processControl: processControl,
+            quitTimeout: 0.1,
+            backupRetention: backupRetention
+        )
+    }
+
+    /// Every file in the container, keyed by its path relative to the container
+    /// root — what a byte-for-byte comparison of two container states needs.
+    func containerContents() throws -> [String: Data] {
+        let root = stickiesDirectory.root
+        guard let walker = fileManager.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey])
+        else { return [:] }
+
+        var files: [String: Data] = [:]
+        for case let url as URL in walker {
+            guard try url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else { continue }
+            let key = url.path(percentEncoded: false)
+                .replacingOccurrences(of: root.path(percentEncoded: false), with: "")
+            files[key] = try Data(contentsOf: url)
+        }
+        return files
+    }
+
+    /// Deletes every note package and the state file, leaving an empty
+    /// container — the "wipe" of the round-trip test.
+    func wipeContainer() throws {
+        for name in try fileManager.contentsOfDirectory(atPath: stickiesDirectory.root.path(percentEncoded: false)) {
+            try fileManager.removeItem(
+                at: stickiesDirectory.root.appending(path: name, directoryHint: .notDirectory)
+            )
+        }
+    }
+
     private func identifier(_ rawIdentifier: String) throws -> StickyID {
         guard let id = StickyID(rawValue: rawIdentifier) else {
             throw FixtureError(description: "\(rawIdentifier) is not a usable sticky identifier")

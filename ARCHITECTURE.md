@@ -3,10 +3,11 @@
 How the system is built and why. [SPEC.md](SPEC.md) is the source of truth for
 what it should do; this document covers the structure chosen to do it, the
 decisions behind that structure, and what is known to be wrong or unproven. As
-of Milestone 1 the built surface reads a container completely — the format
-layer, a container probe, a reader, and the `doctor`, `list`, and `export`
-commands — and writes nothing. Everything below distinguishes what exists from
-what is designed but not yet written.
+of Milestone 2 a container can be read completely and written back safely on one
+Mac — the format layer, a probe, a reader, a writer, the apply coordinator, and
+the `doctor`, `list`, `export`, and `import` commands. Nothing moves between Macs
+yet. Everything below distinguishes what exists from what is designed but not yet
+written.
 
 ## System Shape
 
@@ -63,6 +64,12 @@ keeps an updated Mac talking to one that has not updated yet.
 | 20 | `.DS_Store` is the one package entry excluded from replication | Finder metadata is machine-local by definition and never part of an RTFD document, so carrying it between Macs is noise that would also register as a spurious change in Milestone 3. Every other file in a package, recognised or not, is carried verbatim |
 | 21 | Property-list values are modelled as a `PlistValue` enum rather than `[String: Any]` | `Any` is neither `Sendable` nor `Equatable`, and every read of it is an unchecked cast — untenable for a value that gets compared, hashed, carried across concurrency domains, and written back. The cost is one conversion at each filesystem boundary |
 | 22 | Reading a note's text lives in `StickiesStore`, not `StickiesFormat` | RTF parsing is an AppKit facility, and `StickiesFormat` deliberately imports nothing but Foundation and CoreGraphics so that the byte-level format layer stays free of UI frameworks. `StickiesStore` already imports AppKit for run-state detection, so the extension sits there |
+| 23 | An apply quits Stickies **before** reading the container or taking a backup | The obvious order — validate, back up, quit, write — is wrong, because Stickies autosaves as it quits. Anything read beforehand is stale the moment the quit lands, and a backup taken beforehand would restore a container missing the user's last few keystrokes. Only the frontmost check runs first, since it is the one refusal worth making without disturbing anything |
+| 24 | A write is refused only where it would overwrite or delete a note whose existing package could not be read | The first implementation refused whenever *anything* in the container was unreadable, and a test caught that as over-strict. Unparseable state entries are written back verbatim (#16), so writing cannot damage them; an unreadable package the request never touches is likewise left alone. Refusing over either would disable sync entirely for one odd note — the failure mode #16 exists to avoid. Everything tolerated is reported as a warning naming what was left alone |
+| 25 | Safety comes from a full backup and restore, not from transactional writes | A directory tree cannot be written atomically, and a container of notes is kilobytes, so copying it before every write is cheap and total. Individual packages still go in through a scratch directory and `replaceItemAt`, so a note is never observably half-written; the backup covers the gap between them. Rejected: a journal or write-ahead log, which is real machinery for a problem a copy solves |
+| 26 | The scratch directory lives under Application Support, not inside the container | A staging file that outlived a crash would otherwise sit in the container forever, reported as an entry nothing recognises and confusing every later read. It has to be on the same volume for the atomic replace to work, which both paths under `~/Library` satisfy |
+| 27 | An incoming note with no window state keeps whatever entry the container already had | An archive that carries no position is not a statement that the note should lose the one it has. Rejected: writing a default frame, which would move the user's note for no reason |
+| 28 | A failed relaunch is a warning on a successful apply, not a failure | The notes are already written by that point. Reporting the apply as failed would invite a retry that changes nothing and quits Stickies a second time |
 
 ## Module Layout
 
@@ -85,12 +92,17 @@ Sources/
     Diagnostics.swift        Judges a ContainerReport into pass/warn/fail diagnostics.
     StickiesReader.swift     Reads a container into a StickiesSnapshot.
     NoteText.swift           Plain text and title line from rich text (#22).
+    StickiesProcessControl.swift  Run state, quit-and-wait, launch, behind a protocol.
+    ContainerBackupStore.swift    Timestamped container copies; restore and prune (#25).
+    ContainerWriter.swift    Installs packages and merges the state file (#25, #26).
+    ApplyCoordinator.swift   Orders the quit, validate, back up, write, relaunch (#23).
   stickiesctl/            CLI. Presentation only — no logic worth testing lives here.
     StickiesCTL.swift        Command tree.
     CLISupport.swift         Shared --home option, table rendering, stderr reporting.
     DoctorCommand.swift      Text and JSON rendering of a ContainerReport.
     ListCommand.swift        One row per note.
     ExportCommand.swift      Writes a NoteArchive.
+    ImportCommand.swift      Applies a NoteArchive; --replace and --dry-run.
 Tests/
   StickiesFormatTests/    Unit and golden-file tests; Fixtures/ holds real captured files.
   StickiesStoreTests/     Probe and reader tests against a synthetic home on a real filesystem.
@@ -236,21 +248,66 @@ merely do not *recognise* is reported and tolerated, while a note we could not
 
 ## The write path
 
-Not built. Milestone 2 owns it, and this section records the constraint it must
-satisfy, because the constraint is a verified property of Stickies rather than a
-plan.
-
 Stickies reads its directory at launch and writes over it thereafter, from
 memory, with no file-presenter behavior that would let it notice an external
 edit. Anything written while it runs is lost at the next autosave, and a
 concurrent write to `.SavedStickiesState` can corrupt state for every note at
-once. The apply coordinator therefore has to:
+once. `ApplyCoordinator` exists to make writing safe in spite of that.
 
-1. Refuse to act while Stickies is frontmost — that means the user is typing.
-2. Coalesce all pending remote changes into one quit/write/relaunch cycle.
-3. Relaunch only if it was the one that quit Stickies, never resurrecting an app
-   the user closed deliberately.
-4. Back up the container before writing, and roll back on partial failure.
+```
+request empty?          -> nothing at all: no quit, no backup
+Stickies frontmost?     -> refuse. The user is typing; nothing is touched
+quit Stickies              (it autosaves on the way out — #23)
+read + validate         -> refuse: relaunch first, leave the Mac as we found it
+back up the container      (#25)
+write packages, then the state file
+  on failure            -> restore the backup, relaunch, report the rollback
+relaunch                   only if we were the one who quit it
+prune old backups          failure here is a warning, not a failed apply
+```
+
+The order is the design, and it is not the obvious one. Quitting comes *before*
+reading and backing up, because Stickies flushes its notes as it quits: anything
+read earlier is stale, and a backup taken earlier would restore a container
+missing the user's last keystrokes (#23).
+
+Three guards, each of which has a test:
+
+| Guard | Behaviour |
+|-------|-----------|
+| Frontmost | Refuses outright. A frontmost Stickies means the user is typing in it |
+| Ownership | Relaunches only if the coordinator was the one that quit Stickies, so an app the user closed deliberately stays closed |
+| Unreadable notes | Refuses when the request would overwrite or delete a note whose existing package could not be read (#24) |
+
+Writes go through `ContainerWriter`, which stages each package in a scratch
+directory outside the container and then `replaceItemAt`s it into place, so a note
+is never observably half-written. The state file is merged rather than
+regenerated: entries for notes the request does not touch keep their positions in
+the array, and entries this version cannot parse are written back verbatim.
+
+Rollback is a full restore from the backup taken moments earlier — replacing the
+container directory rather than merging into it, so files a failed write created
+are removed too. If the restore *also* fails, the error names the backup, because
+at that point a person has to look.
+
+## Fidelity of a write
+
+Measured by importing into the real Stickies repeatedly and reading back what it
+left on disk after loading and quitting.
+
+Preserved exactly, every time: note text and rich formatting (byte-identical
+package contents), attachments, all four colours, window size, floating, and
+translucency.
+
+**Window position and z-order are best-effort.** On one import — the one that
+introduced a brand-new note — Stickies repositioned two notes after loading them,
+`{{400, 700}}` becoming `{{1279, 673}}`, and swapped their z-order. Six later
+imports, including ones performed while Stickies was running, honoured written
+frames exactly, so the behaviour is not reproducible on demand and its trigger is
+unknown. Stickies owns window placement and can overrule what is on disk; nothing
+in StickiesSync can prevent that, so position is written faithfully and not
+guaranteed. Z-order should be read as advisory in any case, since Stickies
+renumbers it as windows are raised.
 
 ## Known limitations
 
@@ -283,3 +340,16 @@ once. The apply coordinator therefore has to:
   reported on stderr rather than failing the read, because the note's text is
   still worth replicating. Milestone 4 has to decide what position a note like
   that lands in on the receiving Mac.
+- **Window position is not guaranteed across a write**, as described under
+  "Fidelity of a write" above. Observed once, cause unknown, not reproducible.
+- **`ApplyOutcome.written` counts everything requested, not everything that
+  changed.** A note written identically to what was already on disk is still
+  reported as written, because nothing yet compares the two. Milestone 3's
+  content hashing is what makes "actually changed" answerable, and until then an
+  import's summary overstates what it did.
+- **An import applies the whole archive every time.** There is no batching or
+  debouncing yet, so ten archives imported in a row quit and relaunch Stickies
+  ten times. The coalescing SPEC.md promises belongs to the Milestone 4 agent,
+  which is the first component with a queue to coalesce.
+- **Backups are pruned by count, not by age or size** — the newest ten are kept.
+  A Mac that syncs heavily therefore retains a shorter history than a quiet one.

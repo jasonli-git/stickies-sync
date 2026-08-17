@@ -3,6 +3,37 @@
 All notable changes to StickiesSync. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.3.0] — 2026-08-17
+
+### Added
+
+- **Milestone 2** — the write path. `StickiesSync` can now put notes into the
+  Stickies container safely on one Mac. `StickiesProcessControl` (behind
+  `StickiesProcessControlling`, so tests never quit the developer's own Stickies)
+  reports run state and quits and relaunches the app; `ContainerBackupStore`
+  takes timestamped copies of the container, restores them, and prunes old ones;
+  `ContainerWriter` installs packages through a scratch directory and an atomic
+  replace, merging `.SavedStickiesState` rather than regenerating it; and
+  `ApplyCoordinator` sequences the whole thing — quit, validate, back up, write,
+  roll back on failure, relaunch only what it quit. `stickiesctl import` applies
+  an archive, with `--replace` and `--dry-run`. 101 tests, including the three
+  guards, rollback of a failed write, and an export→wipe→import round trip
+  verified byte-for-byte.
+- Verified against the real Stickies: an import quits it, writes, and relaunches
+  it, and Stickies then loads the written notes and keeps their text, colours,
+  size, floating and translucency exactly. Window position and z-order turn out
+  to be best-effort — see "Fidelity of a write" in
+  [ARCHITECTURE.md](ARCHITECTURE.md).
+
+### Changed
+
+- `StickiesSnapshot` now carries the parsed `SavedStickiesState`, so the writer
+  merges into the document that validation already read instead of re-reading the
+  file. `unreadableStateEntries` became a computed property of it.
+- `SavedStickiesState` gained `upsert(_:)` and `remove(_:)`, which replace an
+  entry in place so a rewritten state file still diffs cleanly against one
+  Stickies wrote.
+
 ## [0.2.0] — 2026-08-17
 
 ### Added

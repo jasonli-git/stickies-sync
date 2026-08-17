@@ -94,6 +94,46 @@ Working list for the current milestone. Longer-horizon items live in
   written as a real. Nothing depends on this beyond keeping a rewritten state
   file diffable against one Stickies wrote.
 
+## Milestone 2 — Safe apply ✅
+
+- [x] `StickiesProcessControlling` — run state, quit-and-wait, launch, behind a
+      protocol so tests never quit the real Stickies
+- [x] `ContainerBackupStore` — copy the container to a timestamped backup,
+      restore from one, prune old ones
+- [x] `ContainerWriter` — write note packages and merge `.SavedStickiesState`
+      via a scratch directory and an atomic replace, preserving entries for notes
+      the write does not touch, including ones this version cannot parse
+- [x] `ApplyCoordinator` — quit, then validate, back up, write, roll back on
+      failure, relaunch only what it quit
+- [x] `StickiesSnapshot` carries the parsed `SavedStickiesState`, so the writer
+      merges against the document the validation already read
+- [x] `stickiesctl import` with `--replace` and `--dry-run`
+- [x] Tests: the three guards, rollback on a failed write, state-file merge
+      including unparseable entries, and a bit-faithful export→wipe→import round
+      trip — 101 tests, all passing
+- [x] End-to-end runs against the real Stickies, quitting and relaunching it
+
+- Note: the first draft of the coordinator refused to write whenever *anything*
+  in the container was unreadable. A test caught that as over-strict: the writer
+  keeps unparseable state entries verbatim, so writing cannot damage them, and
+  refusing would disable sync over one odd entry. The rule is now narrow —
+  refuse only where the request would overwrite or delete a note whose package
+  could not be read (ARCHITECTURE #24).
+- Note: **Stickies may move a note's window and renumber z-order after loading
+  what we wrote.** Seen once, on an import that introduced a brand-new note:
+  two notes ended up repositioned and their z-orders swapped. Six later imports,
+  including ones performed while Stickies was running, honoured written frames
+  exactly, so it is not reproducible on demand. Content, colour, size, floating
+  and translucency were preserved every time. Recorded as a limitation; position
+  is best-effort because the final say belongs to Stickies.
+- Note: the real container now holds three test notes, one of them created by
+  `import` rather than by Stickies. Useful for Milestone 3's watcher; delete them
+  when they stop being useful.
+- Note: `ApplyOutcome` reports `written` as everything requested rather than
+  everything that changed — a note written identically to what was already there
+  still counts. Milestone 3's change detection is what makes "actually changed"
+  answerable.
+
 ## Parked / needs user input
 
 - [SPEC.md](SPEC.md) says StickiesSync "requires Full Disk Access to read another

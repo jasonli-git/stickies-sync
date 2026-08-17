@@ -13,9 +13,10 @@ do and [ARCHITECTURE.md](ARCHITECTURE.md) for how it is built.
 
 ## Features
 
-Milestones 0 and 1 are complete: StickiesSync can read a Mac's notes completely
-and export them without altering a byte. It writes nothing yet. The rest of this
-list is the plan, tracked in [ROADMAP.md](ROADMAP.md).
+Milestones 0 through 2 are complete: StickiesSync can read a Mac's notes, export
+them without altering a byte, and write notes back safely. Nothing moves between
+Macs yet. The rest of this list is the plan, tracked in
+[ROADMAP.md](ROADMAP.md).
 
 - **Health check** *(built)* — `stickiesctl doctor` locates the Stickies
   container, reports whether it can be read, counts note packages, checks that
@@ -31,12 +32,17 @@ list is the plan, tracked in [ROADMAP.md](ROADMAP.md).
   byte-identical to the container it came from.
 - **Per-note change detection** — a change to one sticky syncs that sticky, not
   the whole directory.
-- **Safe write-back** — remote changes are applied by quitting Stickies,
-  writing, and relaunching it, because Stickies overwrites its files from memory
-  while running. Writes are batched, never happen while you are typing in
-  Stickies, and are preceded by a container backup.
-- **Full fidelity** — text, rich formatting, embedded attachments, colour,
-  translucency, window frame, collapsed state, and z-order.
+- **Safe write-back** *(built)* — `stickiesctl import` quits Stickies, writes,
+  and relaunches it, because Stickies overwrites its files from memory while
+  running. It refuses while Stickies is frontmost, never relaunches an app you
+  closed yourself, copies the container to a backup first, and restores that
+  backup if the write fails.
+- **Fidelity** *(built)* — text, rich formatting, embedded attachments, all four
+  colours, window size, floating and translucency all survive a write exactly.
+  Window position and z-order are best-effort: Stickies owns window placement and
+  occasionally overrules what is on disk.
+- **Batching** — coalescing several incoming changes into one quit/relaunch
+  cycle, so ten arriving notes cause one blink rather than ten.
 - **Conflict copies** — when the same note changed on two Macs, both versions
   survive and one appears as a new sticky. Nothing is decided silently.
 - **Version history and deleted-note recovery.**
@@ -56,8 +62,8 @@ list is the plan, tracked in [ROADMAP.md](ROADMAP.md).
   reading; FSEvents for change detection (Milestone 3).
 - **Local state:** SQLite under `~/Library/Application Support/StickiesSync/`
   (Milestone 3).
-- **Tests:** swift-testing, 78 tests, including golden-file tests against a real
-  `.SavedStickiesState`.
+- **Tests:** swift-testing, 101 tests, including golden-file tests against a real
+  `.SavedStickiesState` and a byte-for-byte export→wipe→import round trip.
 
 ## Setup
 
@@ -96,16 +102,26 @@ Result: warning
 Add `--json` for machine-readable output. Warnings do not fail the run; failures
 exit non-zero.
 
-Listing and exporting notes:
+Listing, exporting, and importing notes:
 
 ```bash
 swift run stickiesctl list
 swift run stickiesctl export -o notes.plist
+swift run stickiesctl import notes.plist --dry-run
+swift run stickiesctl import notes.plist
 ```
 
 `export` writes an XML property list holding every note's package bytes and
-window state unchanged. Both commands report anything in the container they could
-not read on standard error, and exit non-zero if that included a note's content.
+window state unchanged. `import` writes such an archive back: it quits Stickies
+first, since Stickies overwrites its files from memory while running, then
+relaunches it — but never while Stickies is frontmost, because that means you are
+typing in it. The container is copied to
+`~/Library/Application Support/StickiesSync/Backups/` before every write and
+restored if the write fails. Add `--replace` to delete notes the archive does not
+contain, or `--dry-run` to see what would change.
+
+All three commands report anything in the container they could not read on
+standard error, and exit non-zero when that would mean losing a note.
 
 Every command takes `--home <path>` to read a synthetic container instead of the
 real one, which is how the test suite exercises them.
@@ -118,6 +134,6 @@ application's container regardless.
 
 ## Status
 
-v0.2.0 — Milestones 0 and 1 of 7 complete. Notes can be read and exported;
-nothing is written and nothing synchronizes yet. Progress is in
-[ROADMAP.md](ROADMAP.md); what shipped is in [CHANGELOG.md](CHANGELOG.md).
+v0.3.0 — Milestones 0 through 2 of 7 complete. Notes can be read, exported, and
+written back safely on one Mac; nothing synchronizes between Macs yet. Progress is
+in [ROADMAP.md](ROADMAP.md); what shipped is in [CHANGELOG.md](CHANGELOG.md).

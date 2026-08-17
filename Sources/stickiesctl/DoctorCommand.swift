@@ -17,19 +17,10 @@ struct DoctorCommand: ParsableCommand {
     @Flag(name: .long, help: "Emit the report as JSON instead of text.")
     var json = false
 
-    @Option(
-        name: .customLong("home"),
-        help: ArgumentHelp(
-            "Probe a synthetic home directory instead of the real one.",
-            valueName: "path"
-        )
-    )
-    var homeDirectory: String?
+    @OptionGroup var container: ContainerOptions
 
     func run() throws {
-        let home = homeDirectory.map { URL(filePath: $0, directoryHint: .isDirectory) }
-            ?? ContainerLocator.currentHomeDirectory
-        let report = ContainerProbe.forHome(home).run()
+        let report = ContainerProbe.forHome(container.home).run()
         let diagnostics = report.diagnostics()
 
         if json {

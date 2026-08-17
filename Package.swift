@@ -10,6 +10,7 @@ let package = Package(
         .executable(name: "stickiesctl", targets: ["stickiesctl"]),
         .library(name: "StickiesFormat", targets: ["StickiesFormat"]),
         .library(name: "StickiesStore", targets: ["StickiesStore"]),
+        .library(name: "SyncEngine", targets: ["SyncEngine"]),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.5.0"),
@@ -17,11 +18,15 @@ let package = Package(
     targets: [
         .target(name: "StickiesFormat"),
         .target(name: "StickiesStore", dependencies: ["StickiesFormat"]),
+        // Deliberately does NOT depend on StickiesStore: the engine replicates
+        // notes and must not learn what a Mac or a network is.
+        .target(name: "SyncEngine", dependencies: ["StickiesFormat"]),
         .executableTarget(
             name: "stickiesctl",
             dependencies: [
                 "StickiesFormat",
                 "StickiesStore",
+                "SyncEngine",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ]
         ),
@@ -33,5 +38,6 @@ let package = Package(
             resources: [.copy("Fixtures")]
         ),
         .testTarget(name: "StickiesStoreTests", dependencies: ["StickiesStore"]),
+        .testTarget(name: "SyncEngineTests", dependencies: ["SyncEngine", "StickiesFormat"]),
     ]
 )

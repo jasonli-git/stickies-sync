@@ -25,7 +25,13 @@ let package = Package(
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ]
         ),
-        .testTarget(name: "StickiesFormatTests", dependencies: ["StickiesFormat"]),
+        .testTarget(
+            name: "StickiesFormatTests",
+            dependencies: ["StickiesFormat"],
+            // Golden files captured from a real Stickies container, copied
+            // verbatim so a byte-for-byte comparison means something.
+            resources: [.copy("Fixtures")]
+        ),
         .testTarget(name: "StickiesStoreTests", dependencies: ["StickiesStore"]),
     ]
 )

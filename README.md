@@ -1,0 +1,2 @@
+# stickies-sync
+

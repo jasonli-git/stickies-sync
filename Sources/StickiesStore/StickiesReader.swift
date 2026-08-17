@@ -17,10 +17,15 @@ public struct StickiesSnapshot: Hashable, Sendable {
     public var stateWithoutPackage: [StickyWindowState]
     /// Packages that exist but could not be read or did not validate.
     public var unreadableNotes: [UnreadableNote]
-    /// Reasons individual `.SavedStickiesState` entries could not be parsed.
-    public var unreadableStateEntries: [String]
     /// Directory entries that are neither a note package nor the state file.
     public var unrecognizedEntries: [String]
+    /// The state document as read, entry order and unparseable entries intact.
+    /// The writer merges against this rather than re-reading the file, so what
+    /// was validated is what gets written back.
+    public var savedState: SavedStickiesState
+
+    /// Reasons individual `.SavedStickiesState` entries could not be parsed.
+    public var unreadableStateEntries: [String] { savedState.unreadableReasons }
 
     /// True when the whole container was understood — the precondition
     /// SPEC.md F14 requires before anything is written anywhere.
@@ -96,8 +101,8 @@ public struct StickiesReader {
             notes: notes,
             stateWithoutPackage: state.notes.filter { !present.contains($0.id) },
             unreadableNotes: unreadable,
-            unreadableStateEntries: state.unreadableReasons,
-            unrecognizedEntries: contents.unrecognized
+            unrecognizedEntries: contents.unrecognized,
+            savedState: state
         )
     }
 

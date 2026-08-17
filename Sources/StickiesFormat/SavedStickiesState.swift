@@ -37,6 +37,32 @@ public struct SavedStickiesState: Hashable, Sendable {
     public subscript(id: StickyID) -> StickyWindowState? {
         notes.first { $0.id == id }
     }
+
+    /// Replaces the entry for this note in place, or appends it if the document
+    /// has none. In place matters: the surrounding entries keep their positions,
+    /// so a state file this tool rewrites still diffs cleanly against the one
+    /// Stickies wrote.
+    public mutating func upsert(_ state: StickyWindowState) {
+        if let index = index(of: state.id) {
+            entries[index] = .note(state)
+        } else {
+            entries.append(.note(state))
+        }
+    }
+
+    /// Removes the entry for this identifier. Entries this version could not
+    /// parse are never candidates — an entry we cannot read is an entry we
+    /// cannot prove is the one being removed.
+    public mutating func remove(_ id: StickyID) {
+        guard let index = index(of: id) else { return }
+        entries.remove(at: index)
+    }
+
+    private func index(of id: StickyID) -> Int? {
+        entries.firstIndex {
+            if case .note(let state) = $0 { state.id == id } else { false }
+        }
+    }
 }
 
 extension SavedStickiesState {

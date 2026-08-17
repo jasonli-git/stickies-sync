@@ -2,6 +2,7 @@ import ArgumentParser
 import Foundation
 import StickiesFormat
 import StickiesStore
+import SyncEngine
 
 /// Shared by every command that reads a container, so `--home` means the same
 /// thing everywhere and tests can point any command at a fixture.
@@ -18,6 +19,35 @@ struct ContainerOptions: ParsableArguments {
     var home: URL {
         homeDirectory.map { URL(filePath: $0, directoryHint: .isDirectory) }
             ?? ContainerLocator.currentHomeDirectory
+    }
+
+    /// The engine has no idea where a Mac keeps things, so the CLI is what joins
+    /// `ContainerLocator`'s layout to `Replica.open`.
+    var replicaURL: URL {
+        ContainerLocator.applicationSupportDirectory(homeDirectory: home)
+            .appending(path: "replica.sqlite3", directoryHint: .notDirectory)
+    }
+
+    func openReplica() throws -> Replica {
+        try Replica.open(at: replicaURL)
+    }
+
+    /// Reads the container and hands its notes to the replica. The one place the
+    /// store and the engine meet.
+    func reconcile(_ replica: Replica) throws -> (changes: [NoteChange], snapshot: StickiesSnapshot) {
+        let snapshot = try StickiesReader.forHome(home).read()
+        return (try replica.reconcile(with: snapshot.notes), snapshot)
+    }
+}
+
+extension NoteChange {
+    var glyph: String {
+        switch kind {
+        case .added: "+"
+        case .edited: isWindowStateOnly ? "~" : "*"
+        case .deleted: "-"
+        case .reappeared: "^"
+        }
     }
 }
 

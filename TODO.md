@@ -43,12 +43,62 @@ Working list for the current milestone. Longer-horizon items live in
   since an RTFD package genuinely is a directory. Harmless for path
   construction, but string comparisons against it need to expect it.
 
-## Milestone 1 — Read-only fidelity
+## Milestone 1 — Read-only fidelity ✅
 
-Not started; tasks will be written when the milestone is approved. The open
-format questions it must answer are listed under "The Stickies data format" in
-[ARCHITECTURE.md](ARCHITECTURE.md).
+- [x] Measure the real format on macOS 26.6.1: package layout, where colour
+      lives, exact state keys and value types, and write cadence
+- [x] `PlistValue` — a typed, `Sendable`, `Equatable` property-list value, so a
+      state entry can be carried around and compared without `Any`
+- [x] `GeometryString` — strict parsing and formatting of the `{{x, y}, {w, h}}`
+      and `{w, h}` strings Stickies stores, rejecting malformed input instead of
+      silently yielding a zero rect
+- [x] `StickyColor` and `StickyPalette` — the four `{Red, Green, Blue, Alpha}`
+      dictionaries
+- [x] `StickyWindowState` — typed frame, expanded size, z-order, floating,
+      translucency, spell-checking mask, and the palette, retaining the entry's
+      unrecognised keys verbatim so a future macOS key survives a read/write
+      cycle
+- [x] `SavedStickiesState` — parse and serialize the plist array, look entries
+      up by identifier, keep unparseable entries verbatim
+- [x] `NotePackage` — the `.rtfd` payload as its constituent files, kept as
+      bytes rather than a re-serialized `NSAttributedString`, because Milestone
+      2 requires a bit-faithful round trip
+- [x] `StickyNote` — identity, package, and window state
+- [x] `NoteArchive` — versioned portable archive; the shape Milestone 2's
+      `import` and Milestone 4's record codec reuse
+- [x] `StickiesReader` — reads a container into a snapshot of notes, state
+      entries with no package, packages that would not validate, unparseable
+      state entries, and unrecognised directory entries
+- [x] `stickiesctl list` — one row per note with size, position, colour,
+      z-order, flags, and first line of text
+- [x] `stickiesctl export` — writes a `NoteArchive`, verified byte-identical to
+      the container it came from
+- [x] Golden-file tests against a real `.SavedStickiesState` captured from this
+      Mac, plus round-trip and reader tests — 78 tests, all passing
+
+- Note: two bugs were found by tests rather than by reading the code, both in
+  `GeometryString`. The first miscounted braces and rejected every real frame;
+  the second accepted `{{8, 1110} {300, 200}}` with the separating comma
+  missing. The parser now matches a punctuation skeleton (ARCHITECTURE #18).
+  Lenient geometry parsing is worth distrusting on sight.
+- Note: UI scripting is unavailable — `osascript` has no Accessibility grant on
+  this Mac, so notes could not be created through the Stickies interface. The
+  format was measured by hand-writing packages instead, which incidentally
+  proved Stickies accepts foreign notes. If Milestone 2 wants UI-driven test
+  fixtures, that grant has to be given first.
+- Note: the two test notes created during this milestone are still in the real
+  container. They are useful for Milestone 2's round-trip work; delete them from
+  Stickies when they stop being useful.
+- Note: the `ExpandFrameY` value is written back as an integer when whole. It is
+  a y coordinate and could in principle be fractional, in which case it is
+  written as a real. Nothing depends on this beyond keeping a rewritten state
+  file diffable against one Stickies wrote.
 
 ## Parked / needs user input
 
-- Nothing currently parked.
+- [SPEC.md](SPEC.md) says StickiesSync "requires Full Disk Access to read another
+  application's container", and gives that as the reason the Mac App Store is out
+  of scope. Measurement contradicted the first half (ARCHITECTURE #19): no
+  permission is needed. The App Store conclusion still holds, but because of the
+  sandbox. The spec is only edited on request — say the word and both sentences
+  get corrected.

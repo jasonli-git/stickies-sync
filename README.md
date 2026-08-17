@@ -13,14 +13,22 @@ do and [ARCHITECTURE.md](ARCHITECTURE.md) for how it is built.
 
 ## Features
 
-Milestone 0 is complete; only the health check below is built so far. The rest
-of this list is the plan, tracked in [ROADMAP.md](ROADMAP.md).
+Milestones 0 and 1 are complete: StickiesSync can read a Mac's notes completely
+and export them without altering a byte. It writes nothing yet. The rest of this
+list is the plan, tracked in [ROADMAP.md](ROADMAP.md).
 
 - **Health check** *(built)* — `stickiesctl doctor` locates the Stickies
   container, reports whether it can be read, counts note packages, checks that
   the window-state file parses, flags entries it cannot classify, notices a
   surviving pre-sandbox database, and reports whether Stickies is running and
   frontmost.
+- **Reading notes** *(built)* — `stickiesctl list` shows every note with its
+  size, screen position, colour, z-order, floating and translucency flags, and
+  first line of text. Anything in the container that could not be read is
+  reported rather than skipped.
+- **Portable export** *(built)* — `stickiesctl export` writes a versioned
+  archive carrying each note's package bytes and window state verbatim, verified
+  byte-identical to the container it came from.
 - **Per-note change detection** — a change to one sticky syncs that sticky, not
   the whole directory.
 - **Safe write-back** — remote changes are applied by quitting Stickies,
@@ -42,12 +50,14 @@ of this list is the plan, tracked in [ROADMAP.md](ROADMAP.md).
 
 - **Language and build:** Swift 6, SwiftPM, deployment target macOS 14.
   `swift-argument-parser` is the only third-party dependency.
-- **Format layer:** Foundation — RTFD packages and XML property lists.
-- **System integration:** AppKit for application run state; FSEvents for change
-  detection (Milestone 3).
+- **Format layer:** Foundation and CoreGraphics — RTFD packages held as bytes,
+  window state as XML property lists.
+- **System integration:** AppKit for application run state and rich-text
+  reading; FSEvents for change detection (Milestone 3).
 - **Local state:** SQLite under `~/Library/Application Support/StickiesSync/`
   (Milestone 3).
-- **Tests:** swift-testing, 24 tests.
+- **Tests:** swift-testing, 78 tests, including golden-file tests against a real
+  `.SavedStickiesState`.
 
 ## Setup
 
@@ -83,16 +93,31 @@ StickiesSync doctor
 Result: warning
 ```
 
-Add `--json` for machine-readable output, or `--home <path>` to probe a
-synthetic layout instead of the real container. Warnings do not fail the run;
-failures exit non-zero.
+Add `--json` for machine-readable output. Warnings do not fail the run; failures
+exit non-zero.
 
-Reading another application's container requires **Full Disk Access**. If doctor
-reports `permission denied` on the container, grant it to the terminal or
-program running `stickiesctl`. This requirement is also why StickiesSync cannot
-be sandboxed or shipped through the Mac App Store.
+Listing and exporting notes:
+
+```bash
+swift run stickiesctl list
+swift run stickiesctl export -o notes.plist
+```
+
+`export` writes an XML property list holding every note's package bytes and
+window state unchanged. Both commands report anything in the container they could
+not read on standard error, and exit non-zero if that included a note's content.
+
+Every command takes `--home <path>` to read a synthetic container instead of the
+real one, which is how the test suite exercises them.
+
+**No special permission is needed.** Reading Stickies' container was measured to
+require no Full Disk Access grant on macOS 26.6.1 — see decision #19 in
+[ARCHITECTURE.md](ARCHITECTURE.md). StickiesSync still cannot be sandboxed or
+shipped through the Mac App Store, because the sandbox forbids reading another
+application's container regardless.
 
 ## Status
 
-v0.1.0 — Milestone 0 of 7 complete. Nothing synchronizes yet. Progress is in
+v0.2.0 — Milestones 0 and 1 of 7 complete. Notes can be read and exported;
+nothing is written and nothing synchronizes yet. Progress is in
 [ROADMAP.md](ROADMAP.md); what shipped is in [CHANGELOG.md](CHANGELOG.md).

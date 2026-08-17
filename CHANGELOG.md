@@ -3,6 +3,41 @@
 All notable changes to StickiesSync. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.2.0] — 2026-08-17
+
+### Added
+
+- **Milestone 1** — read-only fidelity. `StickiesFormat` now models the real
+  format: `PlistValue` (typed property-list values), `GeometryString` (strict
+  `{{x, y}, {w, h}}` parsing), `StickyColor`/`StickyPalette`,
+  `StickyWindowState` (frame, expanded size, z-order, floating, translucency,
+  spell-checking mask, four colours, and verbatim retention of keys this version
+  does not know), `SavedStickiesState` (per-entry parsing, so one bad entry costs
+  one note), `NotePackage` (package contents as bytes, never a re-serialized
+  attributed string), `StickyNote`, and `NoteArchive` (a versioned portable
+  archive). `StickiesStore` gained `StickiesReader`, producing a
+  `StickiesSnapshot` that separates notes read completely from state without a
+  package, packages that would not validate, unparseable state entries, and
+  unrecognised directory entries. Two new commands: `stickiesctl list` and
+  `stickiesctl export`. 78 tests, including golden-file tests against a real
+  `.SavedStickiesState`.
+- Answers to all five open format questions, measured against a live Stickies
+  10.3 on macOS 26.6.1 and recorded in [ARCHITECTURE.md](ARCHITECTURE.md):
+  packages are flat `TXT.rtf` plus attachments; **colour lives in
+  `.SavedStickiesState`, not the RTF**; the state file is written live rather
+  than at quit; and **reading the container needs no Full Disk Access**. Stickies
+  was also shown to accept a hand-written note package unchanged, which is the
+  foundation Milestone 2's write path stands on.
+
+### Changed
+
+- `doctor`'s permission-denied message no longer presents Full Disk Access as a
+  requirement, since it is not one; a denial is now described as unexpected.
+- `hasUnreadableData` moved from the CLI onto `StickiesSnapshot`, so the commands
+  and the tests share one definition of what counts as data loss.
+- `--home` is now a shared option group used by every command rather than a flag
+  private to `doctor`.
+
 ## [0.1.0] — 2026-08-17
 
 ### Added

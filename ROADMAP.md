@@ -1,6 +1,7 @@
 # StickiesSync — Roadmap
 
-Milestone 0 shipped as v0.1.0 on 2026-08-17. Nothing synchronizes yet. A
+Milestone 1 shipped as v0.2.0 on 2026-08-17. A container can be read completely
+and exported byte-for-byte; nothing is written and nothing synchronizes yet. A
 milestone is done when its capability works end to end, its tests pass, the six
 project documents match the code, and the user has reviewed it. Milestones 6 and
 7 are marked optional: v1 is complete without them (see the non-goals in
@@ -11,7 +12,7 @@ project documents match the code, and the user has reviewed it. Milestones 6 and
 | M | Status | Deliverable |
 |---|--------|-------------|
 | 0 | ✅ done | **Scaffolding** — SwiftPM workspace, `make check`, project docs, and `stickiesctl doctor` reporting container location, readability, note count, state-file shape, and Stickies run state |
-| 1 | ⬜ planned | **Read-only fidelity** — `StickiesFormat` parses `<UUID>.rtfd` and `.SavedStickiesState` into a `StickyNote`; `stickiesctl list` and `export`; golden-file tests; every open format question in [ARCHITECTURE.md](ARCHITECTURE.md) answered |
+| 1 | ✅ done | **Read-only fidelity** — `StickiesFormat` parses `<UUID>.rtfd` and `.SavedStickiesState` into a `StickyNote`; `stickiesctl list` and `export`; golden-file tests; every open format question in [ARCHITECTURE.md](ARCHITECTURE.md) answered |
 | 2 | ⬜ planned | **Safe apply** — quit/write/relaunch coordinator with frontmost and ownership guards, container backup and rollback, `stickiesctl import`, bit-faithful export→wipe→import round trip |
 | 3 | ⬜ planned | **Change detection** — SQLite replica, FSEvents watcher, per-note content hashing, version vectors, tombstones, version history; `stickiesctl watch` streaming note-level changes on one Mac |
 | 4 | ⬜ planned | **Two Macs sync** — `FolderTransport` over a write-disjoint shared directory, manifest exchange, apply loop, last-writer-wins with conflict copies, `launchd` agent. First daily-usable release |

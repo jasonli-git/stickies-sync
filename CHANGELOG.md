@@ -3,6 +3,36 @@
 All notable changes to StickiesSync. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.4.0] — 2026-08-17
+
+### Added
+
+- **Milestone 3** — change detection. A new `SyncEngine` module, depending on
+  `StickiesFormat` alone so it never learns what a Mac or a network is. It holds
+  a SQLite replica at `~/Library/Application Support/StickiesSync/replica.sqlite3`
+  with four tables — `device`, `notes`, `version_vectors`, `note_versions` —
+  applied through numbered migrations. `Replica.reconcile(with:)` compares the
+  container against what the replica believed and records every difference in one
+  transaction: additions, edits, deletions as tombstones, and the reappearance of
+  a note that had been deleted. `NoteDigest` hashes a note's content and its
+  window state separately, so a note that only moved is distinguishable from one
+  that was edited. `VersionVector` gives ordering between Macs without consulting
+  any clock, including the concurrency detection Milestone 4 will turn into
+  conflict copies. `PlistValue.canonicalBytes` supplies the stable encoding the
+  digests need.
+- `ContainerWatcher` in `StickiesStore` — FSEvents over the container subtree,
+  since a note's text lives inside its `.rtfd` package and a directory-only watch
+  would miss every edit.
+- Four commands: `stickiesctl scan`, `watch`, `history`, and `restore`. Together
+  they make deleted-note recovery real — a note deleted from Stickies keeps its
+  content in the replica and `restore` puts it back through the same apply path
+  as `import`. 135 tests.
+
+### Changed
+
+- `stickiesctl` gained a `--settle` option on `watch` for the FSEvents coalescing
+  window.
+
 ## [0.3.0] — 2026-08-17
 
 ### Added

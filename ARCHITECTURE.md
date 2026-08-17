@@ -70,6 +70,14 @@ keeps an updated Mac talking to one that has not updated yet.
 | 26 | The scratch directory lives under Application Support, not inside the container | A staging file that outlived a crash would otherwise sit in the container forever, reported as an entry nothing recognises and confusing every later read. It has to be on the same volume for the atomic replace to work, which both paths under `~/Library` satisfy |
 | 27 | An incoming note with no window state keeps whatever entry the container already had | An archive that carries no position is not a statement that the note should lose the one it has. Rejected: writing a default frame, which would move the user's note for no reason |
 | 28 | A failed relaunch is a warning on a successful apply, not a failure | The notes are already written by that point. Reporting the apply as failed would invite a retry that changes nothing and quits Stickies a second time |
+| 29 | `SyncEngine` depends on `StickiesFormat` only, never on `StickiesStore` | The engine replicates notes; it must not learn what a Mac, a container, or a network is, or Milestone 4's transport work would have to reach through it. It is handed `[StickyNote]` and returns what changed. The CLI is the only place the store and the engine meet, in `ContainerOptions.reconcile` — a join of about four lines, which is the right size for that seam |
+| 30 | SQLite is used through a hand-written wrapper over the system library, not a package | The schema is four tables and roughly twenty statements. GRDB and SQLite.swift were both considered and rejected: they are good libraries, but this would be a dependency the project leans on permanently to save ~180 lines, and `swift-argument-parser` staying the only third-party package is worth more than the saving (#10). `Database` is the seam if that ever stops being true |
+| 31 | A note has two digests — content and window state — not one | Stickies moves windows and renumbers z-order on its own, so a single digest would report a note as edited every time its window shifted, and a sync driven by that would ship the note's whole content because the user dragged it. Two digests let `NoteChange.isWindowStateOnly` exist, so Milestone 4 can price a move differently from an edit. Costs one extra column and one extra hash per note |
+| 32 | Hashing goes through a canonical byte encoding of the property list, not `Hashable` or a serialized plist | Swift's `Hashable` is seeded per process, so a digest stored today would not match the same value hashed tomorrow — a replica that reported every note as edited on every launch. A serialized plist is not canonical either, since dictionary key order follows the hash table's layout. `PlistValue.canonicalBytes` sorts keys and length-prefixes every string and blob, so no two distinct values can collide by running together at a boundary |
+| 33 | `reconcile` detects and records in one transaction; there is no "just tell me what changed" | A caller that could ask without committing would eventually ask twice and act twice. Observing a change exactly once is the property the whole replica exists to provide, and making it optional would put that property in every caller's hands |
+| 34 | A retained version is stored as a single-note `NoteArchive` blob | Reuses the format layer's codec instead of inventing a second serialization for the same data, so history automatically gains anything the archive gains — and a version restored from history is byte-identical to one restored from an exported file, because it is the same bytes through the same decoder |
+| 35 | The schema is a numbered list of migrations, applied on every open | The replica is a cache the user carries across versions of this tool, but it is the *only* home of the version history, so rebuilding it from scratch on a schema change would destroy the thing it exists to hold. Migrations are append-only and `user_version` records progress |
+| 36 | A tombstone row carries no content of its own | The version recorded before the deletion already holds it, and duplicating it would double the storage for every deleted note. `newestRecoverableVersion` skips deletions to find it |
 
 ## Module Layout
 
@@ -96,6 +104,13 @@ Sources/
     ContainerBackupStore.swift    Timestamped container copies; restore and prune (#25).
     ContainerWriter.swift    Installs packages and merges the state file (#25, #26).
     ApplyCoordinator.swift   Orders the quit, validate, back up, write, relaunch (#23).
+    ContainerWatcher.swift   FSEvents over the container subtree.
+  SyncEngine/             Replication. Knows nothing of Macs, containers, or networks (#29).
+    Database.swift           Thin wrapper over the system SQLite (#30).
+    Schema.swift             Numbered, append-only migrations (#35).
+    NoteDigest.swift         Separate content and window-state digests (#31).
+    VersionVector.swift      Per-note causality; ordering without clocks (#4).
+    Replica.swift            Reconciles notes against belief; history and tombstones.
   stickiesctl/            CLI. Presentation only — no logic worth testing lives here.
     StickiesCTL.swift        Command tree.
     CLISupport.swift         Shared --home option, table rendering, stderr reporting.
@@ -103,15 +118,26 @@ Sources/
     ListCommand.swift        One row per note.
     ExportCommand.swift      Writes a NoteArchive.
     ImportCommand.swift      Applies a NoteArchive; --replace and --dry-run.
+    ScanCommand.swift        One reconcile, printing what changed.
+    WatchCommand.swift       The same, driven by the watcher, until interrupted.
+    HistoryCommand.swift     Retained versions, deleted notes included.
+    RestoreCommand.swift     Puts a retained version back through the apply path.
 Tests/
   StickiesFormatTests/    Unit and golden-file tests; Fixtures/ holds real captured files.
-  StickiesStoreTests/     Probe and reader tests against a synthetic home on a real filesystem.
+  StickiesStoreTests/     Probe, reader, writer, and watcher tests against a synthetic home.
+  SyncEngineTests/        Digest, vector, and replica tests against an in-memory database.
 ```
 
 **Dependency rule:** `StickiesFormat` imports nothing but Foundation and
-CoreGraphics. `StickiesStore` imports `StickiesFormat` and AppKit. `stickiesctl`
-imports both plus `ArgumentParser`. Nothing imports upward, and no library target
-imports `ArgumentParser`.
+CoreGraphics. `StickiesStore` imports `StickiesFormat`, AppKit, and CoreServices.
+`SyncEngine` imports `StickiesFormat`, SQLite3, and CryptoKit — **not**
+`StickiesStore` (#29). `stickiesctl` imports all three plus `ArgumentParser`.
+Nothing imports upward, and no library target imports `ArgumentParser`.
+
+The store and the engine never meet except in the CLI, where
+`ContainerOptions.reconcile` reads a snapshot from one and hands its notes to the
+other. That join is four lines, and keeping it that small is what will let
+Milestone 4's agent drive the same two halves from a transport.
 
 `StickiesFormat` performs no filesystem access at all, which is why
 `StickiesDirectory` takes a root `URL` rather than hiding behind a filesystem
@@ -309,6 +335,71 @@ in StickiesSync can prevent that, so position is written faithfully and not
 guaranteed. Z-order should be read as advisory in any case, since Stickies
 renumbers it as windows are raised.
 
+## The replica
+
+`~/Library/Application Support/StickiesSync/replica.sqlite3`, in WAL mode with
+foreign keys on. Disposable in the sense that deleting it loses sync history and
+version history but never a note — the notes live in Stickies.
+
+```sql
+device           (singleton, device_id, name)              -- one row, ever
+notes            (sticky_id PK, content_hash, state_hash,
+                  is_deleted, updated_at)
+version_vectors  (sticky_id, device_id, seq)               -- PK (sticky_id, device_id)
+note_versions    (sticky_id, device_id, seq, archive,
+                  is_deletion, recorded_at)                -- PK (sticky_id, device_id, seq)
+```
+
+Key properties the schema encodes:
+
+- **Content and appearance are hashed separately** (#31), which is what makes
+  "this note only moved" expressible at all.
+- **`device_id` is written once and never rewritten.** Every version vector in
+  the history refers to it, so regenerating it would orphan the lot.
+- **Vectors and versions cascade from `notes`**, so a note cannot leave history
+  or counters behind.
+- **`archive` is NULL exactly for a deletion** (#36). Recovery walks back to the
+  newest version that has one.
+- **`updated_at` is informational.** Ordering between Macs comes from vectors,
+  never from these timestamps (#4). They order the history *within* one Mac,
+  which is why they are ISO 8601 strings that sort lexicographically.
+
+## Detecting a change
+
+```
+ContainerWatcher       FSEvents on the subtree  -> "something changed" (coalesced)
+        |
+StickiesReader.read()  container                -> StickiesSnapshot
+        |
+Replica.reconcile()    snapshot.notes           -> [NoteChange], recorded atomically
+        |
+ScanCommand / WatchCommand                      -> one line per change
+```
+
+The watcher reports only *that* something changed, never what. Working out what
+changed needs the whole container anyway, so per-file event details would be
+effort spent on information the next stage discards.
+
+`reconcile` classifies each note by comparing digests against the replica's
+belief:
+
+| Situation | Reported as |
+|-----------|-------------|
+| Not in the replica | `.added` |
+| Digests both match | nothing — the scan is silent |
+| Content digest differs | `.edited`, `contentChanged` |
+| Only the state digest differs | `.edited`, `isWindowStateOnly` |
+| In the replica, tombstoned, now on disk | `.reappeared` |
+| In the replica, not on disk, not yet tombstoned | `.deleted` |
+
+Every reported change bumps this Mac's counter in the note's vector and appends a
+retained version, inside one transaction with the classification. Milestone 3
+only ever increments the local counter, since every change it can see originated
+here; merging a peer's vector is Milestone 4.
+
+A tombstoned note stays tombstoned rather than being rediscovered on every later
+scan — the deletion is reported exactly once.
+
 ## Known limitations
 
 - **`swift test` does not work on this Mac; `make test` does.** The Command Line
@@ -353,3 +444,21 @@ renumbers it as windows are raised.
   which is the first component with a queue to coalesce.
 - **Backups are pruned by count, not by age or size** — the newest ten are kept.
   A Mac that syncs heavily therefore retains a shorter history than a quiet one.
+  The same is true of retained note versions, at twenty per note.
+- **A window move still costs a full retained version.** `isWindowStateOnly`
+  distinguishes the change for a caller, but the version row stores the whole
+  note either way, so a note dragged around repeatedly consumes its twenty
+  versions on positions rather than edits. Storing state-only deltas would fix it
+  and is not worth the complexity until something demonstrates the need.
+- **An import does not update the replica; the next scan does.** `restore` runs a
+  reconcile itself for that reason, but `import` does not, so a change applied by
+  `import` is attributed to this Mac when the next scan notices it. That is
+  correct today, when every change really does originate here, and is exactly
+  what Milestone 4 has to fix: a note arriving from another Mac must keep that
+  Mac's version, not be re-stamped with this one's.
+- **`watch` holds one replica for its lifetime and reopens nothing.** If the
+  database is deleted or replaced underneath a running watch, it keeps writing to
+  the old file handle until restarted.
+- **The FSEvents tests are the only timing-dependent tests in the suite.** They
+  wait on a semaphore with a ten-second deadline rather than sleeping, but they
+  do depend on a real system service delivering events.

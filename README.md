@@ -13,10 +13,10 @@ do and [ARCHITECTURE.md](ARCHITECTURE.md) for how it is built.
 
 ## Features
 
-Milestones 0 through 2 are complete: StickiesSync can read a Mac's notes, export
-them without altering a byte, and write notes back safely. Nothing moves between
-Macs yet. The rest of this list is the plan, tracked in
-[ROADMAP.md](ROADMAP.md).
+Milestones 0 through 3 are complete: StickiesSync can read a Mac's notes, export
+them without altering a byte, write notes back safely, and track what changes —
+including keeping deleted notes recoverable. Nothing moves between Macs yet. The
+rest of this list is the plan, tracked in [ROADMAP.md](ROADMAP.md).
 
 - **Health check** *(built)* — `stickiesctl doctor` locates the Stickies
   container, reports whether it can be read, counts note packages, checks that
@@ -30,8 +30,13 @@ Macs yet. The rest of this list is the plan, tracked in
 - **Portable export** *(built)* — `stickiesctl export` writes a versioned
   archive carrying each note's package bytes and window state verbatim, verified
   byte-identical to the container it came from.
-- **Per-note change detection** — a change to one sticky syncs that sticky, not
-  the whole directory.
+- **Per-note change detection** *(built)* — `stickiesctl watch` reports each
+  note that is added, edited, moved, or deleted as it happens, telling a text
+  edit apart from a window move. A change to one sticky is one change, not a
+  whole-directory diff.
+- **Version history and deleted-note recovery** *(built)* — every change retains
+  a version; `stickiesctl history` lists them and `restore` puts one back, a
+  deleted note included.
 - **Safe write-back** *(built)* — `stickiesctl import` quits Stickies, writes,
   and relaunches it, because Stickies overwrites its files from memory while
   running. It refuses while Stickies is frontmost, never relaunches an app you
@@ -45,7 +50,6 @@ Macs yet. The rest of this list is the plan, tracked in
   cycle, so ten arriving notes cause one blink rather than ten.
 - **Conflict copies** — when the same note changed on two Macs, both versions
   survive and one appears as a new sticky. Nothing is decided silently.
-- **Version history and deleted-note recovery.**
 - **Choice of transport** — a shared directory first, which covers iCloud Drive,
   Syncthing, Dropbox, or an SMB mount without code changes; LAN peer-to-peer and
   object stores later.
@@ -59,10 +63,11 @@ Macs yet. The rest of this list is the plan, tracked in
 - **Format layer:** Foundation and CoreGraphics — RTFD packages held as bytes,
   window state as XML property lists.
 - **System integration:** AppKit for application run state and rich-text
-  reading; FSEvents for change detection (Milestone 3).
-- **Local state:** SQLite under `~/Library/Application Support/StickiesSync/`
-  (Milestone 3).
-- **Tests:** swift-testing, 101 tests, including golden-file tests against a real
+  reading.
+- **Local state:** SQLite (the system library, no wrapper package) at
+  `~/Library/Application Support/StickiesSync/replica.sqlite3`; SHA-256 digests
+  via CryptoKit; FSEvents for change notification.
+- **Tests:** swift-testing, 135 tests, including golden-file tests against a real
   `.SavedStickiesState` and a byte-for-byte export→wipe→import round trip.
 
 ## Setup
@@ -123,6 +128,20 @@ contain, or `--dry-run` to see what would change.
 All three commands report anything in the container they could not read on
 standard error, and exit non-zero when that would mean losing a note.
 
+Tracking changes and recovering notes:
+
+```bash
+swift run stickiesctl scan
+swift run stickiesctl watch
+swift run stickiesctl history
+swift run stickiesctl restore <sticky-id>
+```
+
+`scan` records what changed since the last scan; `watch` does the same
+continuously as you type in Stickies, telling a text edit apart from a window
+move. `history` lists the versions retained per note, deleted ones included, and
+`restore` puts one back through the same safe apply path as `import`.
+
 Every command takes `--home <path>` to read a synthetic container instead of the
 real one, which is how the test suite exercises them.
 
@@ -134,6 +153,6 @@ application's container regardless.
 
 ## Status
 
-v0.3.0 — Milestones 0 through 2 of 7 complete. Notes can be read, exported, and
-written back safely on one Mac; nothing synchronizes between Macs yet. Progress is
-in [ROADMAP.md](ROADMAP.md); what shipped is in [CHANGELOG.md](CHANGELOG.md).
+v0.4.0 — Milestones 0 through 3 of 7 complete. One Mac can read, write, and track
+its own notes; nothing synchronizes between Macs yet. Progress is in
+[ROADMAP.md](ROADMAP.md); what shipped is in [CHANGELOG.md](CHANGELOG.md).

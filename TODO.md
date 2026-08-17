@@ -134,6 +134,49 @@ Working list for the current milestone. Longer-horizon items live in
   still counts. Milestone 3's change detection is what makes "actually changed"
   answerable.
 
+## Milestone 3 — Change detection ✅
+
+- [x] `SyncEngine` module, depending on `StickiesFormat` only — it must not learn
+      what a Mac or a network is
+- [x] `Database` — a thin wrapper over the system SQLite, so the dependency count
+      stays at one
+- [x] Schema and migrations: `device`, `notes`, `version_vectors`,
+      `note_versions`
+- [x] `PlistValue.canonicalBytes` — a deterministic encoding, since Swift's own
+      hashing is not stable across runs
+- [x] `NoteDigest` — separate content and window-state digests, so a note that
+      only moved can be told apart from one that was edited
+- [x] `VersionVector` — per-note, per-device counters; ordering without clocks
+- [x] `Replica.reconcile(with:)` — classify what changed, bump vectors, append
+      history, record tombstones, all in one transaction
+- [x] `ContainerWatcher` — FSEvents over the container, debounced
+- [x] `stickiesctl scan` — one reconcile, printing what changed
+- [x] `stickiesctl watch` — the same, continuously
+- [x] `stickiesctl history` — versions retained per note, deleted notes included
+- [x] `stickiesctl restore` — put a retained version back through the apply
+      coordinator
+- [x] Tests: digest stability, vector increments, each change classification,
+      tombstones and recovery, and no change reported for a container that has
+      not changed — 135 tests, all passing
+
+- Note: `watch` printed nothing to a redirected log at first. stdout is
+  block-buffered when it is not a terminal, so every report sat in the buffer and
+  was lost on Ctrl-C — while the replica recorded the changes correctly, making
+  the bug invisible to the tests and visible only when watching a log file.
+  Fixed with line buffering. Worth remembering for the Milestone 4 agent, which
+  will log to a file by definition.
+- Note: an `import` does not update the replica, so the next scan attributes the
+  imported change to this Mac. Harmless now — every change really does originate
+  here — but Milestone 4 must record an arriving note under the *originating*
+  Mac's version instead, or two Macs will keep re-stamping each other's edits and
+  never converge. This is the single most important thing to get right next.
+- Note: a window move retains a full note version, same as an edit. Twenty
+  versions of a note that was only dragged around is a waste, but storing
+  state-only deltas is not worth the complexity yet.
+- Note: the three test notes are still in the real container and the replica now
+  has history for them, including one delete-and-restore cycle. Useful for
+  Milestone 4's two-Mac work.
+
 ## Parked / needs user input
 
 - [SPEC.md](SPEC.md) says StickiesSync "requires Full Disk Access to read another

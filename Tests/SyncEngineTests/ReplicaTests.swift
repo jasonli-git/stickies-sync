@@ -21,11 +21,12 @@ struct ReplicaTests {
     }
 
     private func makeReplica(
+        database: Database? = nil,
         clock: TestClock = TestClock(),
         versionRetention: Int = Replica.defaultVersionRetention
     ) throws -> Replica {
         try Replica(
-            database: try Database.inMemory(),
+            database: try database ?? Database.inMemory(),
             deviceName: "test-mac",
             versionRetention: versionRetention,
             now: clock.now
@@ -57,6 +58,26 @@ struct ReplicaTests {
             try database.query("PRAGMA user_version").first?.integer("user_version")
                 == Schema.migrations.count
         )
+    }
+
+    @Test("Notes predating the origin column are attributed to this Mac on open")
+    func backfillsOriginForOlderRows() throws {
+        let database = try Database.inMemory()
+        let replica = try makeReplica(database: database)
+        _ = try replica.reconcile(with: [try note("17")])
+
+        // Exactly what a replica built before Milestone 4 looks like: the column
+        // exists with its empty default and nothing has rewritten it.
+        try database.run("UPDATE notes SET origin_device = ''")
+
+        let reopened = try Replica(database: database, deviceName: "test-mac")
+        let known = try #require(try reopened.knownNote(try stickyID("17")))
+
+        // Left empty, this Mac publishes records with no origin, and the
+        // receiving Mac files every version under sequence zero, each
+        // overwriting the last.
+        #expect(known.origin == reopened.deviceID)
+        #expect(try reopened.localRecords().first?.origin == reopened.deviceID)
     }
 
     // MARK: - Classification

@@ -341,15 +341,21 @@ Preserved exactly, every time: note text and rich formatting (byte-identical
 package contents), attachments, all four colours, window size, floating, and
 translucency.
 
-**Window position and z-order are best-effort.** On one import — the one that
-introduced a brand-new note — Stickies repositioned two notes after loading them,
-`{{400, 700}}` becoming `{{1279, 673}}`, and swapped their z-order. Six later
-imports, including ones performed while Stickies was running, honoured written
-frames exactly, so the behaviour is not reproducible on demand and its trigger is
-unknown. Stickies owns window placement and can overrule what is on disk; nothing
-in StickiesSync can prevent that, so position is written faithfully and not
-guaranteed. Z-order should be read as advisory in any case, since Stickies
-renumbers it as windows are raised.
+**Window position and z-order are best-effort, and the trigger is now known.**
+Milestone 2 recorded this as "seen once, not reproducible" — that was wrong, and
+only looked random because a second Mac was not yet in play. Measured on
+2026-08-18 across a 2560×1440 Mac and a 1512×982 one: opening Stickies on the
+smaller display clamps notes whose frames lie outside it, and **rewrites some of
+them to disk** — `{{8, 1110}}` became `{{8, 749}}` while `{{2000, 1000}}` was left
+alone, and z-orders shifted. A partial, inconsistent rewrite rather than a uniform
+clamp.
+
+The consequence is not cosmetic. Those rewrites read as ordinary window-only
+changes, so they replicate: the larger Mac adopts the smaller Mac's clamped
+layout, and since the clamped frames fit the larger screen nothing bounces back.
+The steady state is that every Mac's layout collapses to the smallest display in
+the set, re-triggered whenever a note is repositioned on a larger one. Merely
+opening Stickies on a laptop rearranges the desktop Mac's notes.
 
 ## The replica
 

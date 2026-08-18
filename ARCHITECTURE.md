@@ -83,6 +83,10 @@ keeps an updated Mac talking to one that has not updated yet.
 | 41 | `SyncService` lives in a new `StickiesSyncKit`, not in the CLI | It is the only code that needs both halves — the container and the replica — and putting it in the executable would make it untestable and unavailable to the Milestone 6 app. Everything below it stays ignorant of the other half (#29) |
 | 42 | `integrate` records a history version only when there is content to retain | Found by the convergence test, not by reading the code. A resolution that keeps local content and only advances the vector was writing a history row with a NULL archive — onto the key `(note, device, seq)` that already held that content, erasing it. The Mac then published an older version and quietly overwrote the peer's correct text with stale text. A pass that changes no content now writes no version |
 | 43 | The origin column is backfilled when a replica opens, not by its migration | `ALTER TABLE … DEFAULT ''` leaves every pre-existing row empty, and the migration cannot fill it because it runs before the device row exists. Rows left empty publish records with no origin, and the receiving Mac then files every version of that note under sequence zero, each overwriting the last. Caught by inspecting the first records actually written to iCloud Drive, not by any test |
+| 44 | Window geometry is machine-local: it never bumps a version and is never published | Measured across two real Macs. A frame is a function of the display it was placed on, and Stickies rewrites out-of-bounds frames by itself, so replicating geometry makes every Mac's layout collapse to the smallest screen in the set — merely opening Stickies on a laptop rearranged the desktop Mac's notes. Colour, translucency and floating still travel, because those describe the note rather than the screen. Rejected: suppressing only the *publish* of a move, which leaves geometry riding inside the record so the next content edit drags it across anyway; and per-device geometry maps, which preserve more but cost a bigger record, garbage collection per departed device, and merge surface that two Macs do not need |
+| 45 | A note arriving for the first time is seeded with the sender's placement | There is no local placement to preserve yet, and the sender's frame is better information than whatever corner Stickies would otherwise choose. From then on the placement belongs to the receiving Mac |
+| 46 | Placement is preserved by `SyncService`, not by `MergeDecision` | The first attempt put it in the merge rules, where `local.note` comes from the replica's newest *retained* version — and since a move deliberately retains no version, that geometry is stale by design. It reinstated the very positions it was meant to protect. Placement lives in the container, and the service is the only layer that can see it; the engine decides which content wins and nothing about where it goes |
+| 47 | Migration 3 recomputes digests from retained history at open, rather than leaving them stale | Splitting geometry out of the appearance digest invalidates every stored hash. Left stale, the first scan reports every note as edited, and two Macs both doing that bump their own counter on every note and then conflict over all of them at once — a conflict copy of the entire container, on upgrade |
 | 36 | A tombstone row carries no content of its own | The version recorded before the deletion already holds it, and duplicating it would double the storage for every deleted note. `newestRecoverableVersion` skips deletions to find it |
 
 ## Module Layout
@@ -350,12 +354,15 @@ them to disk** — `{{8, 1110}}` became `{{8, 749}}` while `{{2000, 1000}}` was 
 alone, and z-orders shifted. A partial, inconsistent rewrite rather than a uniform
 clamp.
 
-The consequence is not cosmetic. Those rewrites read as ordinary window-only
-changes, so they replicate: the larger Mac adopts the smaller Mac's clamped
-layout, and since the clamped frames fit the larger screen nothing bounces back.
-The steady state is that every Mac's layout collapses to the smallest display in
-the set, re-triggered whenever a note is repositioned on a larger one. Merely
-opening Stickies on a laptop rearranges the desktop Mac's notes.
+The consequence was not cosmetic. Those rewrites read as ordinary window-only
+changes, so they replicated: the larger Mac adopted the smaller Mac's clamped
+layout, and since the clamped frames fit the larger screen nothing bounced back.
+The steady state was that every Mac's layout collapsed to the smallest display in
+the set, re-triggered whenever a note was repositioned on a larger one — merely
+opening Stickies on a laptop rearranged the desktop Mac's notes.
+
+That is why geometry is now machine-local (#44). Stickies still rewrites frames
+whenever it likes; the difference is that nothing downstream cares.
 
 ## The replica
 
@@ -464,6 +471,10 @@ never leaves the replica claiming notes that were never written.
 | Local is an ancestor | Adopt; the note takes the remote vector |
 | Concurrent, one side a deletion | The edit wins, no copy (#40) |
 | Concurrent, both have content | Later writer keeps the identifier; the loser becomes a conflict copy (#37, #38, #39) |
+
+Whatever is adopted keeps *this* Mac's window placement (#44, #46). Only a note
+arriving for the first time takes the sender's frame, because there is nothing
+local to preserve (#45).
 
 On any concurrent resolution the surviving note takes the *merged* vector. That
 is what stops the two Macs from rediscovering the same conflict on every pass.

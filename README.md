@@ -43,9 +43,13 @@ The remaining items are encryption and a menu-bar app, tracked in
   closed yourself, copies the container to a backup first, and restores that
   backup if the write fails.
 - **Fidelity** *(built)* — text, rich formatting, embedded attachments, all four
-  colours, window size, floating and translucency all survive a write exactly.
-  Window position and z-order are best-effort: Stickies owns window placement and
-  occasionally overrules what is on disk.
+  colours, floating and translucency all survive a write, and all of them sync.
+- **Each Mac keeps its own layout** *(built)* — window positions and z-order are
+  deliberately *not* synced. A frame that fits a 27-inch display is off the edge
+  of a laptop, and Stickies rewrites frames it does not like; replicating that
+  made every Mac's layout collapse to the smallest screen. A note arriving
+  somewhere new is placed where the sender had it, and is yours to move after
+  that.
 - **Cross-Mac sync** *(built)* — `stickiesctl sync --watch` exchanges notes
   through a shared folder. Each Mac writes only its own subtree of it, so iCloud
   Drive or Syncthing never has to resolve anything itself.
@@ -74,7 +78,7 @@ The remaining items are encryption and a menu-bar app, tracked in
 - **Local state:** SQLite (the system library, no wrapper package) at
   `~/Library/Application Support/StickiesSync/replica.sqlite3`; SHA-256 digests
   via CryptoKit; FSEvents for change notification.
-- **Tests:** swift-testing, 149 tests, including golden-file tests against a real
+- **Tests:** swift-testing, 170 tests, including golden-file tests against a real
   `.SavedStickiesState` and a byte-for-byte export→wipe→import round trip.
 
 ## Setup
@@ -174,7 +178,6 @@ application's container regardless.
 
 ## Status
 
-v0.5.0 — Milestones 0 through 4 of 7 complete. Notes sync between Macs.
-Convergence is verified between two simulated Macs on one machine; two real Macs
-have not been tested yet, and nothing on the wire is encrypted. Progress is in
+v0.5.1 — Milestones 0 through 4 of 7 complete. Notes sync between Macs, verified
+between two real ones. Nothing on the wire is encrypted yet. Progress is in
 [ROADMAP.md](ROADMAP.md); what shipped is in [CHANGELOG.md](CHANGELOG.md).

@@ -3,6 +3,39 @@
 All notable changes to StickiesSync. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.5.1] — 2026-08-18
+
+### Fixed
+
+- **Window geometry no longer replicates.** Found by running two real Macs, a
+  2560×1440 and a 1512×982: opening Stickies on the smaller display clamps notes
+  placed on the larger one and rewrites some of the frames to disk. Those
+  rewrites read as ordinary edits and replicated, so every Mac's layout collapsed
+  to the smallest screen in the set — opening Stickies on a laptop rearranged the
+  desktop Mac's notes, with no user action at all.
+
+  `NoteDigest` now hashes a note in three parts rather than two: content,
+  appearance (colour, translucency, floating, and unrecognised keys) and geometry
+  (frame, size, z-order, per-screen frames). A geometry-only change is recorded
+  so the replica stops noticing it, but advances no version and retains no
+  version, so nothing about it can reach another Mac. Adopting a peer's edit
+  keeps this Mac's placement; only a note arriving for the first time is seeded
+  with the sender's frame.
+
+  This also explains the Milestone 2 note that recorded window drift as "seen
+  once, not reproducible on demand". It was always reproducible — the trigger is
+  two Macs with different displays, which was not yet possible to arrange.
+
+### Changed
+
+- `NoteChange.isWindowStateOnly` became `isGeometryOnly`, and now means something:
+  these changes never leave the Mac. It was previously a display label with no
+  effect.
+- Migration 3 splits `state_hash` into `appearance_hash` and `geometry_hash`, and
+  recomputes both from retained history when the replica opens. Left stale, the
+  first scan after upgrading would report every note as edited and two Macs would
+  conflict over all of them at once.
+
 ## [0.5.0] — 2026-08-17
 
 ### Added

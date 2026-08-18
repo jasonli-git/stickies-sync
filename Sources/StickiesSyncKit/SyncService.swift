@@ -88,7 +88,7 @@ public struct SyncService {
         outcome.localChanges = dryRun ? [] : try replica.reconcile(with: snapshot.notes)
 
         // 2. Decide, against every peer.
-        let plan = try makePlan(&outcome)
+        let plan = try makePlan(&outcome, placedBy: snapshot)
 
         // 3. Write everything in one batch, then tell the replica what landed.
         if !dryRun {
@@ -111,7 +111,14 @@ public struct SyncService {
         var integrations: [(id: StickyID, note: StickyNote?, isDeleted: Bool, version: VersionVector, origin: DeviceID)] = []
     }
 
-    private func makePlan(_ outcome: inout SyncOutcome) throws -> Plan {
+    private func makePlan(_ outcome: inout SyncOutcome, placedBy snapshot: StickiesSnapshot) throws -> Plan {
+        // Where each note currently sits on *this* Mac. Taken from the container
+        // rather than the replica: a note that has only been moved leaves no
+        // retained version, by design, so the replica's copy of its geometry is
+        // deliberately stale.
+        let placement = Dictionary(
+            uniqueKeysWithValues: snapshot.notes.map { ($0.id, $0.windowState) }
+        )
         var plan = Plan()
         var localRecords = Dictionary(
             uniqueKeysWithValues: try replica.localRecords().map { ($0.id, $0) }
@@ -143,7 +150,14 @@ public struct SyncService {
                     continue
                 }
 
-                apply(resolution, for: entry.id, local: local, into: &plan, &outcome, &localRecords)
+                apply(
+                    resolution.keepingPlacement(placement[entry.id], of: entry.id),
+                    for: entry.id,
+                    local: local,
+                    into: &plan,
+                    &outcome,
+                    &localRecords
+                )
             }
         }
         return plan
@@ -239,6 +253,27 @@ public struct SyncService {
         let records = try replica.localRecords()
         try transport.publish(manifest: try replica.manifest(publishedAt: now()), records: records)
         outcome.publishedRecords = records.count
+    }
+}
+
+extension Resolution {
+    /// The peer's words and colour, at this Mac's placement.
+    ///
+    /// Adopting a peer's frame for a note already on screen here is what made
+    /// opening Stickies on a laptop rearrange the desktop Mac's notes: the
+    /// smaller display clamps out-of-bounds windows and writes the clamped
+    /// frames back, and those then replicated. A note arriving for the *first*
+    /// time has no local placement to keep, so it is seeded with the sender's.
+    func keepingPlacement(_ local: StickyWindowState??, of id: StickyID) -> Resolution {
+        guard let local = local.flatMap({ $0 }), var record = adopt, var note = record.note else {
+            return self
+        }
+        note.windowState = note.windowState?.keepingGeometry(of: local)
+        record.note = note
+
+        var kept = self
+        kept.adopt = record
+        return kept
     }
 }
 

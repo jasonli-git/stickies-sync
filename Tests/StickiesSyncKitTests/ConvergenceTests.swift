@@ -233,6 +233,127 @@ struct ConvergenceTests {
         }
     }
 
+    // MARK: - Geometry stays where it belongs
+
+    @Test("Moving a note on one Mac does not move it on the other")
+    func geometryDoesNotTravel() throws {
+        try SimulatedMac.pair { a, b, _ in
+            try a.writeNote(
+                "A0000000-0000-0000-0000-000000000001",
+                text: "Placed",
+                frame: CGRect(x: 100, y: 100, width: 300, height: 200)
+            )
+            try settle(a, b)
+
+            // Exactly what Stickies does by itself on a smaller display: the
+            // frame is rewritten to fit, with no user action at all.
+            a.clock.advance()
+            try a.writeNote(
+                "A0000000-0000-0000-0000-000000000001",
+                text: "Placed",
+                frame: CGRect(x: 8, y: 749, width: 300, height: 200)
+            )
+            try settle(a, b)
+
+            let movedOnA = try a.notes().first?.windowState?.frame.origin.y
+            let untouchedOnB = try b.notes().first?.windowState?.frame.origin.y
+            #expect(movedOnA == 749)
+            #expect(untouchedOnB == 100)
+        }
+    }
+
+    @Test("A move produces no sync traffic at all")
+    func aMoveIsNotPublished() throws {
+        try SimulatedMac.pair { a, b, _ in
+            try a.writeNote("A0000000-0000-0000-0000-000000000001", text: "Placed")
+            try settle(a, b)
+
+            a.clock.advance()
+            try a.writeNote(
+                "A0000000-0000-0000-0000-000000000001",
+                text: "Placed",
+                frame: CGRect(x: 900, y: 40, width: 300, height: 200)
+            )
+
+            let onA = try a.sync()
+            #expect(onA.localChanges.allSatisfy { $0.isGeometryOnly })
+
+            // The other Mac has nothing to do — which is the whole point. With
+            // geometry inside the synced digest, opening Stickies on a laptop
+            // rearranged the desktop Mac's notes.
+            #expect(try b.sync().didAnything == false)
+        }
+    }
+
+    @Test("An edit from the other Mac arrives without dragging its window position along")
+    func adoptingAnEditKeepsLocalPlacement() throws {
+        try SimulatedMac.pair { a, b, _ in
+            try a.writeNote(
+                "A0000000-0000-0000-0000-000000000001",
+                text: "First",
+                frame: CGRect(x: 100, y: 100, width: 300, height: 200)
+            )
+            try settle(a, b)
+
+            // B keeps its own layout, then A edits the words.
+            b.clock.advance()
+            try b.writeNote(
+                "A0000000-0000-0000-0000-000000000001",
+                text: "First",
+                frame: CGRect(x: 700, y: 300, width: 300, height: 200)
+            )
+            try settle(a, b)
+
+            a.clock.advance(600)
+            try a.writeNote(
+                "A0000000-0000-0000-0000-000000000001",
+                text: "Second",
+                frame: CGRect(x: 100, y: 100, width: 300, height: 200)
+            )
+            try settle(a, b)
+
+            let onB = try #require(try b.notes().first)
+            #expect(onB.package.plainText?.contains("Second") == true)
+            #expect(onB.windowState?.frame.origin == CGPoint(x: 700, y: 300))
+        }
+    }
+
+    @Test("A note seen for the first time is placed where the sender had it")
+    func newNotesAreSeededWithTheSendersPlacement() throws {
+        try SimulatedMac.pair { a, b, _ in
+            try a.writeNote(
+                "A0000000-0000-0000-0000-000000000001",
+                text: "Arriving",
+                frame: CGRect(x: 640, y: 480, width: 360, height: 240)
+            )
+            try settle(a, b)
+
+            // There is no local placement to preserve yet, so the sender's is
+            // better than whatever corner Stickies would choose.
+            let seeded = try b.notes().first?.windowState?.frame
+            #expect(seeded == CGRect(x: 640, y: 480, width: 360, height: 240))
+        }
+    }
+
+    @Test("Recolouring still travels, because a colour belongs to the note")
+    func appearanceStillSyncs() throws {
+        try SimulatedMac.pair { a, b, _ in
+            try a.writeNote("A0000000-0000-0000-0000-000000000001", text: "Colourful")
+            try settle(a, b)
+
+            a.clock.advance()
+            try a.writeNote(
+                "A0000000-0000-0000-0000-000000000001",
+                text: "Colourful",
+                color: StickyColor(red: 0.68, green: 0.85, blue: 1)
+            )
+            try settle(a, b)
+
+            let arrived = try b.notes().first?.windowState?.palette.sticky
+            #expect(arrived == StickyColor(red: 0.68, green: 0.85, blue: 1))
+        }
+    }
+
     // MARK: - Relaying
 
     @Test("A note relayed onward keeps the Mac it came from as its origin")

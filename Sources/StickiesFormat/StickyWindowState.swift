@@ -139,13 +139,57 @@ extension StickyWindowState {
         static let spineColor = "SpineColor"
         static let controlColor = "ControlColor"
         static let highlightColor = "HighlightColor"
+        static let multiScreenFrame = "MultiScreenFrame"
 
-        /// Every key this version interprets. Anything else lands in
-        /// ``StickyWindowState/unrecognized``.
-        static let known: Set<String> = [
-            uuid, frame, expandedSize, expandFrameY, floating, translucent,
-            spellCheckingTypes, zOrder, stickyColor, spineColor, controlColor, highlightColor,
+        /// Keys describing *where a window sits*, as opposed to what the note
+        /// is. The distinction exists because these are a function of the
+        /// display they were placed on: a frame that is sensible on a 2560-wide
+        /// screen is off the edge of a 1512-wide one, and Stickies rewrites it
+        /// on sight. `MultiScreenFrame` is here on the strength of its name and
+        /// the binary's per-screen selectors, even though its value shape has
+        /// never been observed.
+        static let geometry: Set<String> = [
+            frame, expandedSize, expandFrameY, zOrder, multiScreenFrame,
         ]
+    }
+
+    /// Every key this version interprets. Anything else lands in
+    /// ``StickyWindowState/unrecognized``.
+    enum Interpreted {
+        static let keys: Set<String> = [
+            Key.uuid, Key.frame, Key.expandedSize, Key.expandFrameY, Key.floating,
+            Key.translucent, Key.spellCheckingTypes, Key.zOrder,
+            Key.stickyColor, Key.spineColor, Key.controlColor, Key.highlightColor,
+        ]
+    }
+
+    /// What the note *is*: colour, translucency, floating, and any key this
+    /// version does not recognise. These describe the note rather than the
+    /// screen, so they travel between Macs.
+    public var appearancePlist: PlistValue {
+        guard let entry = plist.dictionaryValue else { return plist }
+        return .dictionary(entry.filter { !Key.geometry.contains($0.key) })
+    }
+
+    /// Where the window sits. Belongs to this Mac, not to the note.
+    public var geometryPlist: PlistValue {
+        guard let entry = plist.dictionaryValue else { return plist }
+        return .dictionary(entry.filter { Key.geometry.contains($0.key) })
+    }
+
+    /// This state's appearance with `other`'s placement — what adopting a peer's
+    /// edit to a note we already have should produce.
+    public func keepingGeometry(of other: StickyWindowState?) -> StickyWindowState {
+        guard let other else { return self }
+        var merged = self
+        merged.frame = other.frame
+        merged.expandedSize = other.expandedSize
+        merged.expandFrameY = other.expandFrameY
+        merged.zOrder = other.zOrder
+        for key in Key.geometry {
+            merged.unrecognized[key] = other.unrecognized[key]
+        }
+        return merged
     }
 
     public enum ParseError: Error, Equatable, CustomStringConvertible {
@@ -198,7 +242,7 @@ extension StickyWindowState {
             isTranslucent: entry[Key.translucent]?.boolValue,
             spellCheckingTypes: entry[Key.spellCheckingTypes]?.intValue,
             zOrder: entry[Key.zOrder]?.intValue,
-            unrecognized: entry.filter { !Key.known.contains($0.key) }
+            unrecognized: entry.filter { !Interpreted.keys.contains($0.key) }
         )
     }
 

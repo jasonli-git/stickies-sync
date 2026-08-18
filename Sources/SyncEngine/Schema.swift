@@ -64,6 +64,17 @@ enum Schema {
         -- empty default is rewritten to this device on the next reconcile.
         ALTER TABLE notes ADD COLUMN origin_device TEXT NOT NULL DEFAULT '';
         """,
+
+        """
+        -- Geometry is split out of the note's appearance because the two travel
+        -- differently: colour belongs to the note, a frame belongs to the screen
+        -- it was placed on. Existing rows hashed both together, so both columns
+        -- are recomputed from retained history when the replica next opens
+        -- rather than left stale, which would report every note as edited and
+        -- have two Macs conflict over all of them at once.
+        ALTER TABLE notes RENAME COLUMN state_hash TO appearance_hash;
+        ALTER TABLE notes ADD COLUMN geometry_hash TEXT NOT NULL DEFAULT '';
+        """,
     ]
 
     /// Applies whatever has not been applied yet. Safe to call on every open.

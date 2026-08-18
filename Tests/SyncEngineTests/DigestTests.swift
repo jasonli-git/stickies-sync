@@ -50,7 +50,7 @@ struct DigestTests {
         #expect(NoteDigest(first) == NoteDigest(second))
     }
 
-    @Test("Editing the text changes the content digest but not the window digest")
+    @Test("Editing the text changes the content digest and nothing else")
     func contentAndStateDigestsAreIndependent() throws {
         let original = try note("17", text: "Milk")
         var edited = original
@@ -60,11 +60,12 @@ struct DigestTests {
         let after = NoteDigest(edited)
 
         #expect(before.content != after.content)
-        #expect(before.state == after.state)
+        #expect(before.appearance == after.appearance)
+        #expect(before.geometry == after.geometry)
     }
 
-    @Test("Moving the window changes the window digest but not the content digest")
-    func movingChangesOnlyTheStateDigest() throws {
+    @Test("Moving the window changes only the geometry digest")
+    func movingChangesOnlyTheGeometryDigest() throws {
         let original = try note("17")
         var moved = original
         moved.windowState = try windowState("17", frame: CGRect(x: 900, y: 40, width: 300, height: 200))
@@ -72,10 +73,31 @@ struct DigestTests {
         let before = NoteDigest(original)
         let after = NoteDigest(moved)
 
-        // This separation is the whole reason for two digests: Stickies moves
-        // windows on its own, and that must not read as an edit.
+        // The whole reason geometry is hashed separately: Stickies moves windows
+        // on its own whenever a note does not fit the screen, and that must not
+        // read as anything worth telling another Mac about.
         #expect(before.content == after.content)
-        #expect(before.state != after.state)
+        #expect(before.appearance == after.appearance)
+        #expect(before.geometry != after.geometry)
+        #expect(before.differsInSyncedPartsFrom(after) == false)
+    }
+
+    @Test("Recolouring changes the appearance digest, and does count as a change to share")
+    func recolouringChangesAppearance() throws {
+        let original = try note("17")
+        var recoloured = original
+        recoloured.windowState = try windowState(
+            "17",
+            color: StickyColor(red: 0.68, green: 0.85, blue: 1)
+        )
+
+        let before = NoteDigest(original)
+        let after = NoteDigest(recoloured)
+
+        // Colour is a property of the note, not of the screen it sits on.
+        #expect(before.appearance != after.appearance)
+        #expect(before.geometry == after.geometry)
+        #expect(before.differsInSyncedPartsFrom(after))
     }
 
     @Test("An attachment counts as content")
@@ -91,6 +113,6 @@ struct DigestTests {
         var stateless = try note("17")
         stateless.windowState = nil
 
-        #expect(NoteDigest(stateless).state != NoteDigest(try note("17")).state)
+        #expect(NoteDigest(stateless).appearance != NoteDigest(try note("17")).appearance)
     }
 }

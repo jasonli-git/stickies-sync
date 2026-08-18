@@ -44,7 +44,7 @@ extension NoteChange {
     var glyph: String {
         switch kind {
         case .added: "+"
-        case .edited: isWindowStateOnly ? "~" : "*"
+        case .edited: isGeometryOnly ? "~" : "*"
         case .deleted: "-"
         case .reappeared: "^"
         }

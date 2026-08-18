@@ -15,25 +15,29 @@ public struct NoteChange: Hashable, Sendable, CustomStringConvertible {
     public let id: StickyID
     public let kind: Kind
     public let contentChanged: Bool
-    public let windowStateChanged: Bool
+    /// Colour, translucency, floating — the parts of the window state that
+    /// describe the note rather than the screen.
+    public let appearanceChanged: Bool
+    /// Frame, size, z-order. Recorded, never published.
+    public let geometryChanged: Bool
     public let version: VersionVector
 
-    /// The note moved or changed colour but its text did not change.
+    /// The window moved or resized and nothing else changed.
     ///
-    /// Worth distinguishing because Stickies repositions windows and renumbers
-    /// z-order on its own, so this kind of change can arise with no user action
-    /// at all. A transport may reasonably treat it as lower priority than an
-    /// edit; nothing here decides that.
-    public var isWindowStateOnly: Bool {
-        kind == .edited && !contentChanged && windowStateChanged
+    /// These never leave the Mac. Stickies rewrites frames by itself whenever a
+    /// note does not fit the screen, so treating a move as a syncable edit drags
+    /// every Mac's layout down to the smallest display in the set — measured,
+    /// not hypothetical.
+    public var isGeometryOnly: Bool {
+        kind == .edited && !contentChanged && !appearanceChanged && geometryChanged
     }
 
     public var description: String {
         let detail =
-            switch (kind, contentChanged, windowStateChanged) {
-            case (.edited, true, true): "edited: text and window"
-            case (.edited, true, false): "edited: text"
-            case (.edited, false, true): "edited: window only"
+            switch (kind, contentChanged, appearanceChanged, geometryChanged) {
+            case (.edited, false, false, true): "moved (stays on this Mac)"
+            case (.edited, true, _, _): "edited: text"
+            case (.edited, false, true, _): "edited: appearance"
             default: kind.rawValue
             }
         return "\(id) \(detail)"
@@ -125,6 +129,35 @@ public final class Replica {
             "UPDATE notes SET origin_device = ? WHERE origin_device = ''",
             [.text(deviceID.rawValue)]
         )
+        try backfillDigests()
+    }
+
+    /// Recomputes the digests of rows written before geometry was split out of
+    /// appearance.
+    ///
+    /// Those rows hashed both halves together, so their appearance digest cannot
+    /// match what this version computes. Left alone, the next scan would report
+    /// every note as edited — and two Macs both doing that would each bump their
+    /// own counter on every note and then conflict over all of them at once.
+    /// Recomputing from retained history is silent and changes no vectors.
+    private func backfillDigests() throws {
+        for row in try database.query("SELECT sticky_id FROM notes WHERE geometry_hash = ''") {
+            guard let raw = row.text("sticky_id"), let id = StickyID(rawValue: raw),
+                  let note = try newestRecoverableVersion(of: id)?.note
+            else { continue }
+
+            let digest = NoteDigest(note)
+            try database.run(
+                """
+                UPDATE notes SET content_hash = ?, appearance_hash = ?, geometry_hash = ?
+                WHERE sticky_id = ?
+                """,
+                [
+                    .text(digest.content), .text(digest.appearance),
+                    .text(digest.geometry), .text(id.rawValue),
+                ]
+            )
+        }
     }
 
     public static func open(
@@ -166,14 +199,16 @@ public final class Replica {
 
                 let kind: NoteChange.Kind
                 let contentChanged: Bool
-                let windowStateChanged: Bool
+                let appearanceChanged: Bool
+                let geometryChanged: Bool
 
                 if let existing {
                     contentChanged = existing.digest.content != digest.content
-                    windowStateChanged = existing.digest.state != digest.state
+                    appearanceChanged = existing.digest.appearance != digest.appearance
+                    geometryChanged = existing.digest.geometry != digest.geometry
                     if existing.isDeleted {
                         kind = .reappeared
-                    } else if !contentChanged && !windowStateChanged {
+                    } else if !contentChanged && !appearanceChanged && !geometryChanged {
                         continue
                     } else {
                         kind = .edited
@@ -181,7 +216,36 @@ public final class Replica {
                 } else {
                     kind = .added
                     contentChanged = true
-                    windowStateChanged = note.windowState != nil
+                    appearanceChanged = note.windowState != nil
+                    geometryChanged = note.windowState != nil
+                }
+
+                // A move is recorded so the replica stops noticing it, but it
+                // does not advance the version and leaves no retained version,
+                // so nothing about it can reach another Mac. Stickies rewrites
+                // frames by itself whenever a note does not fit the screen, and
+                // publishing that would drag every Mac's layout down to the
+                // smallest display in the set.
+                let syncable = kind != .edited || contentChanged || appearanceChanged
+                guard syncable else {
+                    try upsertNote(
+                        note.id,
+                        digest: digest,
+                        isDeleted: false,
+                        origin: existing?.origin ?? deviceID,
+                        at: timestamp
+                    )
+                    changes.append(
+                        NoteChange(
+                            id: note.id,
+                            kind: .edited,
+                            contentChanged: false,
+                            appearanceChanged: false,
+                            geometryChanged: true,
+                            version: existing?.version ?? VersionVector()
+                        )
+                    )
+                    continue
                 }
 
                 try upsertNote(note.id, digest: digest, isDeleted: false, origin: deviceID, at: timestamp)
@@ -193,7 +257,8 @@ public final class Replica {
                         id: note.id,
                         kind: kind,
                         contentChanged: contentChanged,
-                        windowStateChanged: windowStateChanged,
+                        appearanceChanged: appearanceChanged,
+                        geometryChanged: geometryChanged,
                         version: version
                     )
                 )
@@ -211,7 +276,8 @@ public final class Replica {
                         id: id,
                         kind: .deleted,
                         contentChanged: false,
-                        windowStateChanged: false,
+                        appearanceChanged: false,
+                        geometryChanged: false,
                         version: version
                     )
                 )
@@ -257,7 +323,7 @@ public final class Replica {
                 } else {
                     // Nothing to describe: a deletion for a note this Mac has
                     // never held. Recorded so the tombstone still propagates.
-                    NoteDigest(content: "", state: "")
+                    NoteDigest(content: "", appearance: "", geometry: "")
                 }
 
             try upsertNote(id, digest: digest, isDeleted: isDeleted, origin: origin, at: timestamp)
@@ -336,7 +402,7 @@ public final class Replica {
     public func knownNotes() throws -> [KnownNote] {
         try database.query(
             """
-            SELECT sticky_id, content_hash, state_hash, is_deleted, updated_at, origin_device
+            SELECT sticky_id, content_hash, appearance_hash, geometry_hash, is_deleted, updated_at, origin_device
             FROM notes ORDER BY sticky_id
             """
         )
@@ -346,7 +412,8 @@ public final class Replica {
                 id: id,
                 digest: NoteDigest(
                     content: row.text("content_hash") ?? "",
-                    state: row.text("state_hash") ?? ""
+                    appearance: row.text("appearance_hash") ?? "",
+                    geometry: row.text("geometry_hash") ?? ""
                 ),
                 isDeleted: row.bool("is_deleted"),
                 updatedAt: date(row.text("updated_at")),
@@ -454,18 +521,22 @@ public final class Replica {
     ) throws {
         try database.run(
             """
-            INSERT INTO notes (sticky_id, content_hash, state_hash, is_deleted, updated_at, origin_device)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO notes
+                (sticky_id, content_hash, appearance_hash, geometry_hash,
+                 is_deleted, updated_at, origin_device)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (sticky_id) DO UPDATE SET
                 content_hash = excluded.content_hash,
-                state_hash = excluded.state_hash,
+                appearance_hash = excluded.appearance_hash,
+                geometry_hash = excluded.geometry_hash,
                 is_deleted = excluded.is_deleted,
                 updated_at = excluded.updated_at,
                 origin_device = excluded.origin_device
             """,
             [
-                .text(id.rawValue), .text(digest.content), .text(digest.state),
-                .integer(isDeleted ? 1 : 0), .text(string(timestamp)), .text(origin.rawValue),
+                .text(id.rawValue), .text(digest.content), .text(digest.appearance),
+                .text(digest.geometry), .integer(isDeleted ? 1 : 0), .text(string(timestamp)),
+                .text(origin.rawValue),
             ]
         )
     }

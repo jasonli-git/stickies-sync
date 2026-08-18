@@ -245,6 +245,12 @@ Working list for the current milestone. Longer-horizon items live in
 
 ## Parked / needs user input
 
+- [SPEC.md](SPEC.md) needs a decision now that geometry is machine-local. F2
+  lists "window frame … and z-order" among what to capture, and the
+  user-experience section says notes "vanish and reappear in place". Both are
+  still true *within* one Mac, and neither is true across Macs any more. Say the
+  word and F2 gets split into synced and machine-local halves.
+
 - [SPEC.md](SPEC.md) says StickiesSync "requires Full Disk Access to read another
   application's container", and gives that as the reason the Mac App Store is out
   of scope. Measurement contradicted the first half (ARCHITECTURE #19): no

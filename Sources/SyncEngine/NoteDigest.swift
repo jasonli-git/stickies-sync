@@ -2,29 +2,42 @@ import CryptoKit
 import Foundation
 import StickiesFormat
 
-/// Content and appearance digests for a note.
+/// Three digests for a note, because its three parts travel differently.
 ///
-/// Two digests rather than one, because the two travel differently. Stickies
-/// repositions windows on its own and renumbers z-order as they are raised, so a
-/// single digest would report a note as edited every time its window moved — and
-/// a sync driven by that would ship a note's whole content because the user
-/// dragged it. Separating them lets a caller treat a move as the smaller event
-/// it is.
+/// - `content` and `appearance` describe the note, and belong on every Mac.
+/// - `geometry` describes where a window sits, which is a property of the
+///   display it was placed on. It is deliberately excluded from everything that
+///   drives syncing.
+///
+/// The three-way split replaced a two-way one after two real Macs were put in
+/// play. Opening Stickies on a 1512-wide laptop clamps notes placed on a
+/// 2560-wide desktop and rewrites some of them to disk; with geometry folded
+/// into one "state" digest those rewrites read as ordinary edits and replicated,
+/// so every Mac's layout collapsed to the smallest screen in the set.
 public struct NoteDigest: Hashable, Sendable {
     /// Over the package bytes: the note's text, formatting, and attachments.
     public let content: String
-    /// Over the window state: geometry, colours, flags, and any key this version
-    /// does not understand.
-    public let state: String
+    /// Over colour, translucency, floating, and keys this version does not
+    /// recognise.
+    public let appearance: String
+    /// Over frame, size, z-order and per-screen frames. Never published.
+    public let geometry: String
 
-    public init(content: String, state: String) {
+    public init(content: String, appearance: String, geometry: String) {
         self.content = content
-        self.state = state
+        self.appearance = appearance
+        self.geometry = geometry
     }
 
     public init(_ note: StickyNote) {
         self.content = Self.digest(of: note.package)
-        self.state = Self.digest(of: note.windowState)
+        self.appearance = Self.digest(of: note.windowState?.appearancePlist, absent: "no-window-state")
+        self.geometry = Self.digest(of: note.windowState?.geometryPlist, absent: "no-geometry")
+    }
+
+    /// True when the notes differ in a way worth telling another Mac about.
+    public func differsInSyncedPartsFrom(_ other: NoteDigest) -> Bool {
+        content != other.content || appearance != other.appearance
     }
 
     /// Files are folded in sorted-name order, each length-prefixed, so a
@@ -42,9 +55,9 @@ public struct NoteDigest: Hashable, Sendable {
 
     /// A note with no window state digests distinctly from one whose state is
     /// empty, so acquiring a position registers as a change.
-    private static func digest(of state: StickyWindowState?) -> String {
-        guard let state else { return hexadecimal(SHA256.hash(data: Data("no-window-state".utf8))) }
-        return hexadecimal(SHA256.hash(data: state.plist.canonicalBytes))
+    private static func digest(of part: PlistValue?, absent: String) -> String {
+        guard let part else { return hexadecimal(SHA256.hash(data: Data(absent.utf8))) }
+        return hexadecimal(SHA256.hash(data: part.canonicalBytes))
     }
 
     private static func hexadecimal(_ digest: some Sequence<UInt8>) -> String {

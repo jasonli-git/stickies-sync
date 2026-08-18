@@ -30,11 +30,18 @@ public struct Resolution: Hashable, Sendable {
 /// dependence on which Mac is asking. A single non-deterministic choice and the
 /// two Macs disagree permanently, each creating conflict copies of the other's
 /// conflict copies.
+///
+/// It decides *which content wins*, never where the window goes. Placement is a
+/// property of the receiving Mac's display and lives in its container;
+/// `SyncService` is the only layer that can see it.
 public enum MergeDecision {
     /// `nil` when there is nothing to do.
     public static func resolve(local: SyncRecord?, remote: SyncRecord) -> Resolution? {
         guard let local else {
-            // Never seen this note. Adopt it exactly as the peer has it.
+            // Never seen this note, so the peer's frame is the only placement
+            // information there is. Seeding from it beats dropping the note in
+            // whatever corner Stickies picks — and from here on the placement is
+            // this Mac's own.
             return Resolution(adopt: remote, version: remote.version)
         }
 

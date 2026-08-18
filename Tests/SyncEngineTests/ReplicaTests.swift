@@ -117,25 +117,33 @@ struct ReplicaTests {
         let change = try #require(changes.first)
         #expect(change.kind == .edited)
         #expect(change.contentChanged)
-        #expect(change.windowStateChanged == false)
+        #expect(change.geometryChanged == false)
         #expect(change.version[replica.deviceID] == 2)
     }
 
-    @Test("Moving a window reports a window-only change")
+    @Test("Moving a window is recorded here and never published")
     func detectsAWindowMove() throws {
         let clock = TestClock()
         let replica = try makeReplica(clock: clock)
         _ = try replica.reconcile(with: [try note("17")])
         clock.advance()
+        let versionsBefore = try replica.versions(of: try stickyID("17")).count
 
         let moved = try note("17", state: try windowState("17", frame: CGRect(x: 900, y: 40, width: 300, height: 200)))
         let change = try #require(try replica.reconcile(with: [moved]).first)
 
-        // Stickies moves windows on its own, so a caller needs to be able to
-        // tell this apart from an edit without diffing the note itself.
-        #expect(change.kind == .edited)
-        #expect(change.isWindowStateOnly)
+        #expect(change.isGeometryOnly)
         #expect(change.contentChanged == false)
+
+        // The counter does not advance and no version is retained, so nothing
+        // about the move can reach another Mac. Stickies rewrites frames by
+        // itself whenever a note does not fit the screen.
+        #expect(change.version[replica.deviceID] == 1)
+        #expect(try replica.knownNote(try stickyID("17"))?.version[replica.deviceID] == 1)
+        #expect(try replica.versions(of: try stickyID("17")).count == versionsBefore)
+
+        // Recorded all the same, so the next scan is quiet.
+        #expect(try replica.reconcile(with: [moved]).isEmpty)
     }
 
     @Test("A note that disappears is tombstoned, once")
@@ -187,8 +195,10 @@ struct ReplicaTests {
         let change = try #require(try replica.reconcile(with: [changed]).first)
 
         #expect(change.contentChanged)
-        #expect(change.windowStateChanged)
-        #expect(change.isWindowStateOnly == false)
+        #expect(change.geometryChanged)
+        #expect(change.isGeometryOnly == false)
+        // Content moved too, so this one does publish.
+        #expect(change.version[replica.deviceID] == 2)
     }
 
     // MARK: - History

@@ -211,10 +211,26 @@ Working list for the current milestone. Longer-horizon items live in
   already holding that content, erasing it; the Mac then published an older
   version and overwrote its peer's correct text with stale text. Two-Mac
   behaviour is not reviewable by reading — it needed the pair harness.
-- Note: **verification between two real Macs is outstanding.** The simulated pair
-  shares a filesystem and a clock source. Untested for real: clock skew changing
-  the conflict tiebreak, iCloud Drive or Syncthing delaying or reordering file
-  arrival, and a sync landing while Stickies is running on the receiving Mac.
+- Note: **verification between two real Macs is partly done** (2026-08-18,
+  mac-mini.local → jasons-macbook-pro.local over iCloud Drive). Confirmed on real
+  hardware: iCloud delivered the folder unprompted, the peer resolved by name,
+  three records arrived and applied, Stickies rendered all three correctly, and a
+  note created on the second Mac published back. Records relayed onward kept the
+  originating Mac in `Origin`, against real bytes rather than a stub. Still
+  untested: clock skew changing the conflict tiebreak, a sync landing while
+  Stickies is running on the receiving Mac, and delivery through Syncthing.
+- Note: **a smaller display rewrites geometry, and the drift syncs back.** The
+  mini's notes carry frames from its larger screen; two of the three sat outside
+  the laptop's 1512×982 desktop (`2000,1000` and `8,1110`). Stickies drew both
+  clamped on screen, and on quit had rewritten one of them to `8,749` while
+  leaving the other at `2000,1000` — a partial, inconsistent rewrite, not a
+  uniform clamp. Z-orders shifted too. The next `sync` then classified all three
+  of the peer's notes as `edited: window only (here)` and published them, so
+  simply opening Stickies on the second Mac moves the first Mac's notes. This
+  makes the "seen once, not reproducible" window-move note under Milestone 2
+  reproducible: mismatched display sizes are the trigger. `window only` is
+  currently just a label in `Replica.swift`; there is no way to keep
+  geometry-only changes local, and that is the obvious fix to consider.
 - Note: nothing on the wire is encrypted. Anything with read access to the sync
   folder can read every note, and could publish a `devices/` subtree of its own
   and be believed. Milestone 5 closes both.

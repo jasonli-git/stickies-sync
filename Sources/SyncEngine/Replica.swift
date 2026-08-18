@@ -114,6 +114,17 @@ public final class Replica {
             self.deviceID = generated
             self.deviceName = deviceName
         }
+
+        // Rows that predate the origin column carry its empty default. They can
+        // only have originated here — the column arrived with syncing — but the
+        // backfill has to happen after the device row exists, so the migration
+        // itself cannot do it. Leaving them empty publishes records with no
+        // origin, and the receiving Mac then files every version of that note
+        // under sequence zero, each overwriting the last.
+        try database.run(
+            "UPDATE notes SET origin_device = ? WHERE origin_device = ''",
+            [.text(deviceID.rawValue)]
+        )
     }
 
     public static func open(

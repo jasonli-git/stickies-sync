@@ -218,6 +218,11 @@ Working list for the current milestone. Longer-horizon items live in
 - Note: nothing on the wire is encrypted. Anything with read access to the sync
   folder can read every note, and could publish a `devices/` subtree of its own
   and be believed. Milestone 5 closes both.
+- Note: the first records published to the real iCloud folder carried an *empty*
+  origin. `ALTER TABLE … DEFAULT ''` left every Milestone 3 row blank, and the
+  migration could not fill it because it runs before the device row exists. Now
+  backfilled on open (ARCHITECTURE #43). No test caught this — only looking at
+  the bytes that actually landed in the folder did.
 - Note: a peer that goes away is never forgotten — its subtree stays in the
   folder and its counters stay in every vector. Harmless, untidy, and there is
   no `forget-device` command.

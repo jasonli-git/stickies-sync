@@ -216,9 +216,13 @@ Working list for the current milestone. Longer-horizon items live in
   hardware: iCloud delivered the folder unprompted, the peer resolved by name,
   three records arrived and applied, Stickies rendered all three correctly, and a
   note created on the second Mac published back. Records relayed onward kept the
-  originating Mac in `Origin`, against real bytes rather than a stub. Still
-  untested: clock skew changing the conflict tiebreak, a sync landing while
-  Stickies is running on the receiving Mac, and delivery through Syncthing.
+  originating Mac in `Origin`, against real bytes rather than a stub. A second
+  round after 0.5.1 confirmed the geometry fix on the laptop: `make check` at 170
+  tests, migration 3 applied, and the first scan on a replica whose history was
+  built independently of the mini's reported `No changes.` — the digest backfill
+  holds where the histories differ, which is the case the mini alone could not
+  test. Still untested: clock skew changing the conflict tiebreak, a sync landing
+  while Stickies is running on the receiving Mac, and delivery through Syncthing.
 - Note: **a smaller display rewrites geometry, and the drift syncs back.** The
   mini's notes carry frames from its larger screen; two of the three sat outside
   the laptop's 1512×982 desktop (`2000,1000` and `8,1110`). Stickies drew both
@@ -231,6 +235,25 @@ Working list for the current milestone. Longer-horizon items live in
   reproducible: mismatched display sizes are the trigger. `window only` is
   currently just a label in `Replica.swift`; there is no way to keep
   geometry-only changes local, and that is the obvious fix to consider.
+  **Fixed in 0.5.1** by hashing geometry separately and never travelling it.
+  Verified on the laptop: moving a note reports `moved (stays on this Mac)`,
+  `sync` then says `Up to date.`, and a re-scan says `No changes.` — the move is
+  absorbed exactly once. On the wire the manifest is byte-identical apart from
+  `PublishedAt`, and the note's record differs only in `RecordedAt`; frame,
+  digests and version vector are unchanged. An idle sync rewrites nothing at all,
+  so the agent will not churn iCloud on its backstop timer.
+- Note: **the pre-0.5.1 drift left permanent residue in `Origin`.** Those spurious
+  `window only` publishes were genuine authored versions at the time, so the
+  laptop became the origin of all three of the mini's notes; every record in both
+  subtrees now reads `8C9EF3BF…` (the laptop), where before the drift the mini's
+  own three read `8120F0D9…`. Stopping the geometry travelling does not unwind
+  attribution already written. This is not cosmetic: `MergeDecision` uses `origin`
+  as the last-writer-wins tiebreak and seeds `conflictCopyID` from it, so a future
+  tie on these notes resolves differently than it would have, and it contradicts
+  the intent stated in `Schema.swift` that a note keep its originating device
+  rather than be re-attributed. Harmless here because these are test notes with no
+  contested history; worth deciding before real notes accumulate, since there is
+  currently no way to re-attribute a note short of re-authoring it.
 - Note: nothing on the wire is encrypted. Anything with read access to the sync
   folder can read every note, and could publish a `devices/` subtree of its own
   and be believed. Milestone 5 closes both.

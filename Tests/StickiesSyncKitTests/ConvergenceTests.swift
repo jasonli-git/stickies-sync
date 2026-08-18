@@ -285,6 +285,63 @@ struct ConvergenceTests {
         }
     }
 
+    @Test("A move writes nothing to the shared folder, not even a timestamp")
+    func aMoveTouchesNoFiles() throws {
+        try SimulatedMac.pair { a, b, folder in
+            try a.writeNote("A0000000-0000-0000-0000-000000000001", text: "Placed")
+            try settle(a, b)
+
+            let before = try Self.fileContents(of: folder)
+            a.clock.advance()
+            try a.writeNote(
+                "A0000000-0000-0000-0000-000000000001",
+                text: "Placed",
+                frame: CGRect(x: 900, y: 40, width: 300, height: 200)
+            )
+            _ = try a.sync()
+
+            // Not merely "no note changes": no bytes at all. A syncing service
+            // re-uploads anything whose mtime moved, and an agent polling every
+            // thirty seconds would otherwise push thousands of near-identical
+            // files a day and wake every other device for each one.
+            #expect(try Self.fileContents(of: folder) == before)
+        }
+    }
+
+    @Test("A move does not change which Mac would win a later conflict")
+    func aMoveDoesNotShiftTheTiebreak() throws {
+        try SimulatedMac.pair { a, b, _ in
+            try a.writeNote("A0000000-0000-0000-0000-000000000001", text: "Placed")
+            try settle(a, b)
+
+            let id = try #require(StickyID(rawValue: "A0000000-0000-0000-0000-000000000001"))
+            let before = try #require(try a.replica.knownNote(id)).updatedAt
+
+            a.clock.advance(3600)
+            try a.writeNote(
+                "A0000000-0000-0000-0000-000000000001",
+                text: "Placed",
+                frame: CGRect(x: 900, y: 40, width: 300, height: 200)
+            )
+            _ = try a.sync()
+
+            // The recorded time is the last-writer-wins tiebreak. Letting a
+            // window move advance it would mean dragging a note decides a future
+            // conflict over its *text*.
+            #expect(try a.replica.knownNote(id)?.updatedAt == before)
+        }
+    }
+
+    private static func fileContents(of folder: URL) throws -> [String: Data] {
+        guard let walker = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: nil)
+        else { return [:] }
+        var files: [String: Data] = [:]
+        for case let url as URL in walker where url.pathExtension == "plist" {
+            files[url.lastPathComponent] = try Data(contentsOf: url)
+        }
+        return files
+    }
+
     @Test("An edit from the other Mac arrives without dragging its window position along")
     func adoptingAnEditKeepsLocalPlacement() throws {
         try SimulatedMac.pair { a, b, _ in

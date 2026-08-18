@@ -87,6 +87,9 @@ keeps an updated Mac talking to one that has not updated yet.
 | 45 | A note arriving for the first time is seeded with the sender's placement | There is no local placement to preserve yet, and the sender's frame is better information than whatever corner Stickies would otherwise choose. From then on the placement belongs to the receiving Mac |
 | 46 | Placement is preserved by `SyncService`, not by `MergeDecision` | The first attempt put it in the merge rules, where `local.note` comes from the replica's newest *retained* version — and since a move deliberately retains no version, that geometry is stale by design. It reinstated the very positions it was meant to protect. Placement lives in the container, and the service is the only layer that can see it; the engine decides which content wins and nothing about where it goes |
 | 47 | Migration 3 recomputes digests from retained history at open, rather than leaving them stale | Splitting geometry out of the appearance digest invalidates every stored hash. Left stale, the first scan reports every note as edited, and two Macs both doing that bump their own counter on every note and then conflict over all of them at once — a conflict copy of the entire container, on upgrade |
+| 48 | A geometry-only change does not stamp the note's `updated_at` | That timestamp is the last-writer-wins tiebreak, so advancing it would let dragging a window decide a future conflict over the note's *text* — a change that does not travel silently influencing one that does. It is also what makes a republished record differ from the last one, so leaving it alone is what makes a move cost zero bytes on the wire |
+| 49 | The manifest is rewritten only when its entries change, never merely because it was republished | A manifest carries a publication time, so serializing it afresh each pass rewrites the file each pass, and a syncing service re-uploads anything whose mtime moved. An agent polling every thirty seconds would push thousands of identical manifests a day and wake every other device for each. Measured on the real iCloud folder: three idle passes now write nothing at all |
+| 50 | Authorship transferred by pre-0.5.1 geometry publishes is left as it stands, not unwound | Every note in the shared folder now names the laptop as origin, including three the desktop Mac wrote — because before geometry was made machine-local, those window-only publishes were *genuine authored versions*, so the attribution is accurate to what happened. It is also harmless: `origin`'s two load-bearing uses, the conflict tiebreak and the conflict-copy identifier, need only to be deterministic and identical on both Macs, which they are. This does not contradict the relay rule in migration 2 — relaying preserves origin, and a Mac publishing its own new version is not relaying. Rewriting history to say otherwise would be inventing a past |
 | 36 | A tombstone row carries no content of its own | The version recorded before the deletion already holds it, and duplicating it would double the storage for every deleted note. `newestRecoverableVersion` skips deletions to find it |
 
 ## Module Layout
@@ -475,6 +478,22 @@ never leaves the replica claiming notes that were never written.
 Whatever is adopted keeps *this* Mac's window placement (#44, #46). Only a note
 arriving for the first time takes the sender's frame, because there is nothing
 local to preserve (#45).
+
+### What makes an attribute machine-local
+
+Not "is it about the window" — floating and translucency are about the window and
+they sync. The test that actually separates them is:
+
+1. **Is it derived from the display's dimensions?** A frame is; a colour is not.
+2. **Does Stickies rewrite it without the user doing anything?** It rewrites
+   out-of-bounds frames and renumbers z-order on its own. It has never been
+   observed changing a colour, a float flag or a translucency flag by itself.
+
+Geometry fails both and is therefore local. Float-on-top and translucency pass
+both and therefore travel: toggling either propagates, which is predictable
+precisely because nothing but the user ever changes them. The debatable case is a
+note pinned above everything on a 27-inch display and merely in the way on a
+laptop — real, but a preference rather than the silent drift geometry produced.
 
 On any concurrent resolution the surviving note takes the *merged* vector. That
 is what stops the two Macs from rediscovering the same conflict on every pass.

@@ -120,7 +120,20 @@ public struct FolderTransport: SyncTransport {
             )
         }
 
-        try manifest.serialized().write(to: manifestURL(for: device), options: .atomic)
+        // The manifest carries a publication time, so serializing it afresh
+        // every pass would rewrite the file every pass — and a syncing service
+        // re-uploads anything whose mtime moved. An agent polling every thirty
+        // seconds would push thousands of identical manifests a day and wake
+        // every other device for each one. Only what the manifest *says* is
+        // worth republishing.
+        let url = manifestURL(for: device)
+        if let existing = try? DeviceManifest(data: try Data(contentsOf: url)),
+           existing.entries == manifest.entries,
+           existing.deviceName == manifest.deviceName
+        {
+            return
+        }
+        try manifest.serialized().write(to: url, options: .atomic)
     }
 
     public func peerManifests(excluding device: DeviceID) throws -> [DeviceManifest] {

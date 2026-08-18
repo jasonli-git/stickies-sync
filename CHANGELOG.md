@@ -3,6 +3,23 @@
 All notable changes to StickiesSync. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.5.2] — 2026-08-18
+
+### Fixed
+
+- **A window move no longer writes anything to the shared folder.** It was still
+  stamping the note's `updated_at`, which republished the record with a new
+  `RecordedAt` and nothing else. That mattered twice over: `recordedAt` is the
+  last-writer-wins tiebreak, so dragging a window could decide a future conflict
+  over the note's text; and it put a file on the wire for a change that is not
+  supposed to travel.
+- **Idle sync passes no longer rewrite the manifest.** It carries a publication
+  time, so every pass produced a new file and a syncing service re-uploads
+  anything whose mtime moved — an agent polling every thirty seconds would have
+  pushed thousands of identical manifests a day and woken every other device for
+  each one. Measured on a real iCloud Drive folder: three idle passes now write
+  nothing.
+
 ## [0.5.1] — 2026-08-18
 
 ### Fixed

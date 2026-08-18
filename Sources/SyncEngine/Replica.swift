@@ -228,12 +228,19 @@ public final class Replica {
                 // smallest display in the set.
                 let syncable = kind != .edited || contentChanged || appearanceChanged
                 guard syncable else {
+                    // The new digest is stored so the next scan is quiet, but
+                    // the note's recorded time is deliberately left alone. That
+                    // timestamp is the conflict tiebreak, and it is also what
+                    // makes a published record differ from the last one — so
+                    // stamping it here would both let a window move decide a
+                    // future *content* conflict and rewrite a file on the wire
+                    // for a change that is not supposed to travel at all.
                     try upsertNote(
                         note.id,
                         digest: digest,
                         isDeleted: false,
                         origin: existing?.origin ?? deviceID,
-                        at: timestamp
+                        at: existing?.updatedAt ?? timestamp
                     )
                     changes.append(
                         NoteChange(

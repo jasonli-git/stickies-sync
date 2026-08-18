@@ -78,7 +78,7 @@ The remaining items are encryption and a menu-bar app, tracked in
 - **Local state:** SQLite (the system library, no wrapper package) at
   `~/Library/Application Support/StickiesSync/replica.sqlite3`; SHA-256 digests
   via CryptoKit; FSEvents for change notification.
-- **Tests:** swift-testing, 170 tests, including golden-file tests against a real
+- **Tests:** swift-testing, 172 tests, including golden-file tests against a real
   `.SavedStickiesState` and a byte-for-byte export→wipe→import round trip.
 
 ## Setup
@@ -178,6 +178,6 @@ application's container regardless.
 
 ## Status
 
-v0.5.1 — Milestones 0 through 4 of 7 complete. Notes sync between Macs, verified
+v0.5.2 — Milestones 0 through 4 of 7 complete. Notes sync between Macs, verified
 between two real ones. Nothing on the wire is encrypted yet. Progress is in
 [ROADMAP.md](ROADMAP.md); what shipped is in [CHANGELOG.md](CHANGELOG.md).

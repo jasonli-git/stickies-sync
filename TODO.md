@@ -177,32 +177,50 @@ Working list for the current milestone. Longer-horizon items live in
   has history for them, including one delete-and-restore cycle. Useful for
   Milestone 4's two-Mac work.
 
-## Milestone 4 — Two Macs sync
+## Milestone 4 — Two Macs sync ✅
 
-- [ ] `SyncRecord` — one note version as it travels: content, full version
+- [x] `SyncRecord` — one note version as it travels: content, full version
       vector, origin device, tombstone flag
-- [ ] `DeviceManifest` — what one Mac claims to hold, so a peer fetches only the
+- [x] `DeviceManifest` — what one Mac claims to hold, so a peer fetches only the
       records it lacks
-- [ ] `SyncTransport` protocol and `FolderTransport` — write-disjoint layout,
+- [x] `SyncTransport` protocol and `FolderTransport` — write-disjoint layout,
       each device writing only under `devices/<its own id>/`
-- [ ] `Replica.integrate(_:)` — adopt a remote version **without** bumping the
+- [x] `Replica.integrate(_:)` — adopt a remote version **without** bumping the
       local counter, which is the Milestone 3 limitation this milestone exists to
       fix
-- [ ] `Replica.localRecords()` — everything this Mac knows, as publishable
+- [x] `Replica.localRecords()` — everything this Mac knows, as publishable
       records
-- [ ] `MergePlan` — pure decision logic over local and remote vectors: adopt,
+- [x] `MergePlan` — pure decision logic over local and remote vectors: adopt,
       publish, ignore, or conflict
-- [ ] Deterministic conflict copies — both Macs must derive the same winner and
+- [x] Deterministic conflict copies — both Macs must derive the same winner and
       the same new identifier, or each creates its own copy and they never
       converge
-- [ ] `StickiesSyncKit` composition root with `SyncService`: read, reconcile,
+- [x] `StickiesSyncKit` composition root with `SyncService`: read, reconcile,
       pull, apply, integrate, publish
-- [ ] `stickiesctl sync` with `--folder`, `--once`, `--dry-run`
-- [ ] Persisted configuration so the agent runs without arguments
-- [ ] `launchd` agent, installable from the CLI
-- [ ] Tests: merge decisions, deterministic conflict identity, and a full
+- [x] `stickiesctl sync` with `--folder`, `--once`, `--dry-run`
+- [x] Persisted configuration so the agent runs without arguments
+- [x] `launchd` agent, installable from the CLI
+- [x] Tests: merge decisions, deterministic conflict identity, and a full
       two-replica convergence test over one shared folder
-- [ ] Local end-to-end with two simulated Macs before touching real hardware
+- [x] Local end-to-end with two simulated Macs before touching real hardware —
+      149 tests, plus the same thing driven through the real CLI with two
+      `--home` directories and one shared folder
+
+- Note: the convergence test found a bug that review did not. Integrating a
+  resolution that kept local content wrote an empty history row onto the key
+  already holding that content, erasing it; the Mac then published an older
+  version and overwrote its peer's correct text with stale text. Two-Mac
+  behaviour is not reviewable by reading — it needed the pair harness.
+- Note: **verification between two real Macs is outstanding.** The simulated pair
+  shares a filesystem and a clock source. Untested for real: clock skew changing
+  the conflict tiebreak, iCloud Drive or Syncthing delaying or reordering file
+  arrival, and a sync landing while Stickies is running on the receiving Mac.
+- Note: nothing on the wire is encrypted. Anything with read access to the sync
+  folder can read every note, and could publish a `devices/` subtree of its own
+  and be believed. Milestone 5 closes both.
+- Note: a peer that goes away is never forgotten — its subtree stays in the
+  folder and its counters stay in every vector. Harmless, untidy, and there is
+  no `forget-device` command.
 
 ## Parked / needs user input
 

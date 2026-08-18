@@ -13,10 +13,10 @@ do and [ARCHITECTURE.md](ARCHITECTURE.md) for how it is built.
 
 ## Features
 
-Milestones 0 through 3 are complete: StickiesSync can read a Mac's notes, export
-them without altering a byte, write notes back safely, and track what changes —
-including keeping deleted notes recoverable. Nothing moves between Macs yet. The
-rest of this list is the plan, tracked in [ROADMAP.md](ROADMAP.md).
+Milestones 0 through 4 are complete: notes sync between Macs over a shared
+folder, with version history, deleted-note recovery, and visible conflict copies.
+The remaining items are encryption and a menu-bar app, tracked in
+[ROADMAP.md](ROADMAP.md).
 
 - **Health check** *(built)* — `stickiesctl doctor` locates the Stickies
   container, reports whether it can be read, counts note packages, checks that
@@ -46,15 +46,22 @@ rest of this list is the plan, tracked in [ROADMAP.md](ROADMAP.md).
   colours, window size, floating and translucency all survive a write exactly.
   Window position and z-order are best-effort: Stickies owns window placement and
   occasionally overrules what is on disk.
-- **Batching** — coalescing several incoming changes into one quit/relaunch
-  cycle, so ten arriving notes cause one blink rather than ten.
-- **Conflict copies** — when the same note changed on two Macs, both versions
-  survive and one appears as a new sticky. Nothing is decided silently.
-- **Choice of transport** — a shared directory first, which covers iCloud Drive,
+- **Cross-Mac sync** *(built)* — `stickiesctl sync --watch` exchanges notes
+  through a shared folder. Each Mac writes only its own subtree of it, so iCloud
+  Drive or Syncthing never has to resolve anything itself.
+- **Batching** *(built)* — every incoming change is applied in one batch, so ten
+  arriving notes cause one blink rather than ten.
+- **Conflict copies** *(built)* — when the same note changed on two Macs, the
+  later edit keeps the note and the other becomes a second sticky in a
+  distinctive colour. Both Macs derive the same copy independently.
+- **Runs in the background** *(built)* — `stickiesctl agent install` sets up a
+  `launchd` job that syncs at login.
+- **Choice of transport** — a shared directory today, which covers iCloud Drive,
   Syncthing, Dropbox, or an SMB mount without code changes; LAN peer-to-peer and
   object stores later.
 - **End-to-end encryption**, so a transport you do not control never sees
-  plaintext.
+  plaintext. **Not built yet** — today anything that can read the sync folder can
+  read every note.
 
 ## Tech stack
 
@@ -67,7 +74,7 @@ rest of this list is the plan, tracked in [ROADMAP.md](ROADMAP.md).
 - **Local state:** SQLite (the system library, no wrapper package) at
   `~/Library/Application Support/StickiesSync/replica.sqlite3`; SHA-256 digests
   via CryptoKit; FSEvents for change notification.
-- **Tests:** swift-testing, 135 tests, including golden-file tests against a real
+- **Tests:** swift-testing, 149 tests, including golden-file tests against a real
   `.SavedStickiesState` and a byte-for-byte export→wipe→import round trip.
 
 ## Setup
@@ -142,6 +149,20 @@ continuously as you type in Stickies, telling a text edit apart from a window
 move. `history` lists the versions retained per note, deleted ones included, and
 `restore` puts one back through the same safe apply path as `import`.
 
+Syncing with another Mac:
+
+```bash
+swift run stickiesctl sync --folder ~/Library/Mobile\ Documents/com~apple~CloudDocs/StickiesSync
+swift run stickiesctl sync --watch
+swift run stickiesctl agent install
+swift run stickiesctl agent status
+```
+
+Point every Mac at the same shared folder — any directory another service keeps
+in step, such as iCloud Drive or a Syncthing folder. The folder is remembered
+after the first `--folder`. Each Mac writes only its own subtree, so the service
+moving the files never has to resolve anything itself.
+
 Every command takes `--home <path>` to read a synthetic container instead of the
 real one, which is how the test suite exercises them.
 
@@ -153,6 +174,7 @@ application's container regardless.
 
 ## Status
 
-v0.4.0 — Milestones 0 through 3 of 7 complete. One Mac can read, write, and track
-its own notes; nothing synchronizes between Macs yet. Progress is in
+v0.5.0 — Milestones 0 through 4 of 7 complete. Notes sync between Macs.
+Convergence is verified between two simulated Macs on one machine; two real Macs
+have not been tested yet, and nothing on the wire is encrypted. Progress is in
 [ROADMAP.md](ROADMAP.md); what shipped is in [CHANGELOG.md](CHANGELOG.md).

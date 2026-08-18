@@ -3,6 +3,37 @@
 All notable changes to StickiesSync. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.5.0] — 2026-08-17
+
+### Added
+
+- **Milestone 4** — notes sync between Macs. `SyncEngine` gained `SyncRecord`
+  (one note version as it travels, carrying its whole vector), `DeviceManifest`
+  (what a Mac holds, without the content, so a peer fetches only what it lacks),
+  the `SyncTransport` seam with `FolderTransport` over a write-disjoint shared
+  directory, and `MergeDecision` — the deterministic resolution rules that let
+  two Macs that never speak reach the same answer. `Replica.integrate(_:)` adopts
+  a peer's version under *its* identity rather than restamping it locally, which
+  is the Milestone 3 limitation this milestone existed to fix.
+- `StickiesSyncKit`, the composition root, with `SyncService.syncOnce`: read the
+  container, reconcile, pull from peers, apply everything in one batch, integrate,
+  publish. Ten notes arriving cause one quit-and-relaunch of Stickies, not ten.
+- `stickiesctl sync` (`--folder`, `--watch`, `--dry-run`, `--interval`) and
+  `stickiesctl agent install|uninstall|status` for a `launchd` job that syncs at
+  login. 149 tests, including a two-simulated-Mac convergence suite covering
+  propagation, deletion, relaying, concurrent edits, and edit-versus-delete.
+- Conflicts produce a visible second note: the later edit keeps the original
+  identifier, the loser becomes a copy in a distinctive colour, offset from the
+  original. Both Macs derive the same copy and the same identifier independently.
+
+### Fixed
+
+- `Replica.integrate` wrote a history row with no content when a resolution kept
+  local content and only advanced the vector. The row collided with the one
+  already holding that content and erased it, after which the Mac published an
+  older version and overwrote its peer's correct text with stale text. Found by
+  the convergence test, not by review.
+
 ## [0.4.0] — 2026-08-17
 
 ### Added

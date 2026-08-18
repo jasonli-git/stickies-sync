@@ -177,6 +177,33 @@ Working list for the current milestone. Longer-horizon items live in
   has history for them, including one delete-and-restore cycle. Useful for
   Milestone 4's two-Mac work.
 
+## Milestone 4 — Two Macs sync
+
+- [ ] `SyncRecord` — one note version as it travels: content, full version
+      vector, origin device, tombstone flag
+- [ ] `DeviceManifest` — what one Mac claims to hold, so a peer fetches only the
+      records it lacks
+- [ ] `SyncTransport` protocol and `FolderTransport` — write-disjoint layout,
+      each device writing only under `devices/<its own id>/`
+- [ ] `Replica.integrate(_:)` — adopt a remote version **without** bumping the
+      local counter, which is the Milestone 3 limitation this milestone exists to
+      fix
+- [ ] `Replica.localRecords()` — everything this Mac knows, as publishable
+      records
+- [ ] `MergePlan` — pure decision logic over local and remote vectors: adopt,
+      publish, ignore, or conflict
+- [ ] Deterministic conflict copies — both Macs must derive the same winner and
+      the same new identifier, or each creates its own copy and they never
+      converge
+- [ ] `StickiesSyncKit` composition root with `SyncService`: read, reconcile,
+      pull, apply, integrate, publish
+- [ ] `stickiesctl sync` with `--folder`, `--once`, `--dry-run`
+- [ ] Persisted configuration so the agent runs without arguments
+- [ ] `launchd` agent, installable from the CLI
+- [ ] Tests: merge decisions, deterministic conflict identity, and a full
+      two-replica convergence test over one shared folder
+- [ ] Local end-to-end with two simulated Macs before touching real hardware
+
 ## Parked / needs user input
 
 - [SPEC.md](SPEC.md) says StickiesSync "requires Full Disk Access to read another

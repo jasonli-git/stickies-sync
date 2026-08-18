@@ -47,6 +47,10 @@ public struct KnownNote: Hashable, Sendable {
     public let isDeleted: Bool
     public let updatedAt: Date
     public let version: VersionVector
+    /// The Mac whose change produced this state. Not necessarily this Mac: a
+    /// note adopted from a peer keeps that peer's identity, which is what stops
+    /// a relayed note from being re-attributed on every hop.
+    public let origin: DeviceID
 }
 
 /// One retained version of a note.
@@ -169,7 +173,7 @@ public final class Replica {
                     windowStateChanged = note.windowState != nil
                 }
 
-                try upsertNote(note.id, digest: digest, isDeleted: false, at: timestamp)
+                try upsertNote(note.id, digest: digest, isDeleted: false, origin: deviceID, at: timestamp)
                 let version = try bumpVersion(of: note.id, from: existing?.version)
                 try recordVersion(note.id, seq: version[deviceID], note: note, isDeletion: false, at: timestamp)
 
@@ -187,7 +191,7 @@ public final class Replica {
             // Whatever is left in `known` was not on disk. A note already
             // tombstoned stays tombstoned rather than being reported again.
             for (id, existing) in known.sorted(by: { $0.key < $1.key }) where !existing.isDeleted {
-                try upsertNote(id, digest: existing.digest, isDeleted: true, at: timestamp)
+                try upsertNote(id, digest: existing.digest, isDeleted: true, origin: deviceID, at: timestamp)
                 let version = try bumpVersion(of: id, from: existing.version)
                 try recordVersion(id, seq: version[deviceID], note: nil, isDeletion: true, at: timestamp)
 
@@ -209,11 +213,121 @@ public final class Replica {
         }
     }
 
+    // MARK: - Integrating a peer's version
+
+    /// Records a version that came from somewhere else, under *its* identity.
+    ///
+    /// This is the method Milestone 3 was missing, and the reason two Macs can
+    /// converge at all. `reconcile` bumps this Mac's counter because everything
+    /// it sees originated here; integration must do the opposite and take the
+    /// vector wholesale. Bumping the local counter here would restamp every
+    /// arriving note as a local edit, so each Mac would keep telling the other
+    /// about changes the other had just made, and the two would never settle.
+    ///
+    /// `note` is `nil` to leave this Mac's content alone and only advance the
+    /// vector — what a concurrent resolution needs when the local content won.
+    public func integrate(
+        id: StickyID,
+        note: StickyNote?,
+        isDeleted: Bool,
+        version: VersionVector,
+        origin: DeviceID,
+        recordedAt: Date? = nil
+    ) throws {
+        try database.transaction {
+            let timestamp = recordedAt ?? now()
+            let existing = try knownNote(id)
+
+            let digest: NoteDigest =
+                if let note {
+                    NoteDigest(note)
+                } else if let existing {
+                    existing.digest
+                } else {
+                    // Nothing to describe: a deletion for a note this Mac has
+                    // never held. Recorded so the tombstone still propagates.
+                    NoteDigest(content: "", state: "")
+                }
+
+            try upsertNote(id, digest: digest, isDeleted: isDeleted, origin: origin, at: timestamp)
+            try replaceVersionVector(of: id, with: version)
+
+            // Only when there is something to retain. A resolution that keeps
+            // this Mac's content and merely advances the vector has no new
+            // version to record — and writing one would be actively destructive,
+            // because the history row it would land on is keyed by
+            // (note, device, seq) and already holds that content. Recording an
+            // empty version there erases it, and the Mac then publishes whatever
+            // older version is left, quietly overwriting the peer's correct copy
+            // with stale text.
+            if note != nil || isDeleted {
+                try recordVersion(
+                    id,
+                    device: origin,
+                    seq: version[origin],
+                    note: note,
+                    isDeletion: isDeleted,
+                    at: timestamp
+                )
+                try pruneVersions(of: id)
+            }
+        }
+    }
+
+    public func integrate(_ record: SyncRecord) throws {
+        try integrate(
+            id: record.id,
+            note: record.note,
+            isDeleted: record.isDeletion,
+            version: record.version,
+            origin: record.origin,
+            recordedAt: record.recordedAt
+        )
+    }
+
+    /// Everything this Mac knows, in publishable form.
+    ///
+    /// A note whose content is no longer retained is skipped rather than
+    /// published as an empty one — publishing a note with no content would tell
+    /// peers to overwrite theirs with nothing.
+    public func localRecords() throws -> [SyncRecord] {
+        try knownNotes().compactMap { known in
+            let note = known.isDeleted ? nil : try newestRecoverableVersion(of: known.id)?.note
+            guard known.isDeleted || note != nil else { return nil }
+            return SyncRecord(
+                id: known.id,
+                origin: known.origin,
+                version: known.version,
+                isDeletion: known.isDeleted,
+                note: note,
+                recordedAt: known.updatedAt
+            )
+        }
+    }
+
+    public func localRecord(_ id: StickyID) throws -> SyncRecord? {
+        try localRecords().first { $0.id == id }
+    }
+
+    public func manifest(publishedAt: Date? = nil) throws -> DeviceManifest {
+        DeviceManifest(
+            device: deviceID,
+            deviceName: deviceName,
+            publishedAt: publishedAt ?? now(),
+            entries: try knownNotes().map {
+                DeviceManifest.Entry(id: $0.id, version: $0.version, isDeletion: $0.isDeleted)
+            }
+        )
+    }
+
     // MARK: - Reading
 
     public func knownNotes() throws -> [KnownNote] {
         try database.query(
-            "SELECT sticky_id, content_hash, state_hash, is_deleted, updated_at FROM notes ORDER BY sticky_id"
+            """
+            SELECT sticky_id, content_hash, state_hash, is_deleted, updated_at, origin_device
+            FROM notes ORDER BY sticky_id
+            """
         )
         .compactMap { row in
             guard let raw = row.text("sticky_id"), let id = StickyID(rawValue: raw) else { return nil }
@@ -225,7 +339,8 @@ public final class Replica {
                 ),
                 isDeleted: row.bool("is_deleted"),
                 updatedAt: date(row.text("updated_at")),
-                version: try versionVector(of: id)
+                version: try versionVector(of: id),
+                origin: DeviceID(rawValue: row.text("origin_device") ?? deviceID.rawValue)
             )
         }
     }
@@ -307,36 +422,52 @@ public final class Replica {
     /// Always called before `bumpVersion` and `recordVersion`: both reference
     /// this row, and the schema's foreign keys are checked per statement rather
     /// than deferred to the end of the transaction.
+    /// Replaces every counter, which is what integrating a peer's version means:
+    /// the peer's vector already includes whatever it knew of ours.
+    private func replaceVersionVector(of id: StickyID, with version: VersionVector) throws {
+        try database.run("DELETE FROM version_vectors WHERE sticky_id = ?", [.text(id.rawValue)])
+        for (device, seq) in version.counters.sorted(by: { $0.key < $1.key }) {
+            try database.run(
+                "INSERT INTO version_vectors (sticky_id, device_id, seq) VALUES (?, ?, ?)",
+                [.text(id.rawValue), .text(device.rawValue), .integer(seq)]
+            )
+        }
+    }
+
     private func upsertNote(
         _ id: StickyID,
         digest: NoteDigest,
         isDeleted: Bool,
+        origin: DeviceID,
         at timestamp: Date
     ) throws {
         try database.run(
             """
-            INSERT INTO notes (sticky_id, content_hash, state_hash, is_deleted, updated_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO notes (sticky_id, content_hash, state_hash, is_deleted, updated_at, origin_device)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT (sticky_id) DO UPDATE SET
                 content_hash = excluded.content_hash,
                 state_hash = excluded.state_hash,
                 is_deleted = excluded.is_deleted,
-                updated_at = excluded.updated_at
+                updated_at = excluded.updated_at,
+                origin_device = excluded.origin_device
             """,
             [
                 .text(id.rawValue), .text(digest.content), .text(digest.state),
-                .integer(isDeleted ? 1 : 0), .text(string(timestamp)),
+                .integer(isDeleted ? 1 : 0), .text(string(timestamp)), .text(origin.rawValue),
             ]
         )
     }
 
     private func recordVersion(
         _ id: StickyID,
+        device: DeviceID? = nil,
         seq: Int,
         note: StickyNote?,
         isDeletion: Bool,
         at timestamp: Date
     ) throws {
+        let device = device ?? deviceID
         let archive = try note.map { try NoteArchive(notes: [$0]).serialized() }
         try database.run(
             """
@@ -348,7 +479,7 @@ public final class Replica {
                 recorded_at = excluded.recorded_at
             """,
             [
-                .text(id.rawValue), .text(deviceID.rawValue), .integer(seq),
+                .text(id.rawValue), .text(device.rawValue), .integer(seq),
                 archive.map { Database.Value.blob($0) } ?? .null,
                 .integer(isDeletion ? 1 : 0), .text(string(timestamp)),
             ]

@@ -52,7 +52,11 @@ struct ReplicaTests {
         _ = try Replica(database: database)
         _ = try Replica(database: database)
 
-        #expect(try database.query("PRAGMA user_version").first?.integer("user_version") == 1)
+        // Every migration applied exactly once, however many there are.
+        #expect(
+            try database.query("PRAGMA user_version").first?.integer("user_version")
+                == Schema.migrations.count
+        )
     }
 
     // MARK: - Classification

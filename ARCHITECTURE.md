@@ -3,11 +3,9 @@
 How the system is built and why. [SPEC.md](SPEC.md) is the source of truth for
 what it should do; this document covers the structure chosen to do it, the
 decisions behind that structure, and what is known to be wrong or unproven. As
-of Milestone 2 a container can be read completely and written back safely on one
-Mac — the format layer, a probe, a reader, a writer, the apply coordinator, and
-the `doctor`, `list`, `export`, and `import` commands. Nothing moves between Macs
-yet. Everything below distinguishes what exists from what is designed but not yet
-written.
+of Milestone 4 notes move between Macs over a shared folder, with conflicts
+resolved into visible copies. Everything below distinguishes what exists from
+what is designed but not yet written.
 
 ## System Shape
 
@@ -21,20 +19,21 @@ objects between a person's own Macs.
   own state — the replica database and container backups — lives under
   `~/Library/Application Support/StickiesSync/`, and is disposable: deleting it
   costs sync history, never notes.
-- **Boundaries:** three of them. `StickiesFormat` knows the on-disk format and
-  nothing about the filesystem. `StickiesStore` knows this Mac and nothing
-  about synchronization. The sync engine (Milestone 3) will know about
-  replication and nothing about Macs or networks.
+- **Boundaries:** four of them. `StickiesFormat` knows the on-disk format and
+  nothing about the filesystem. `StickiesStore` knows this Mac and nothing about
+  synchronization. `SyncEngine` knows about replication and transports, and
+  nothing about Macs or containers. `StickiesSyncKit` is the only place the
+  middle two meet.
 - **External dependencies:** exactly one, `swift-argument-parser`. Everything
-  else is Foundation and AppKit.
+  else is Foundation, AppKit, CoreServices, SQLite3 and CryptoKit.
 - **Permissions:** none. Reading another application's container was measured to
   need no TCC grant on macOS 26.6.1 (#19). The Mac App Store is still closed off,
   but by the sandbox rather than by TCC.
 
 Future shapes stay cheap because the pieces that would change are already named
 as seams. A LAN, object-store, or self-hosted backend replaces one conformance
-to `SyncTransport` (Milestone 4) and touches no note-handling code. A different
-conflict policy replaces `ConflictPolicy`. A macOS release that changes the
+to `SyncTransport` and touches no note-handling code. A different conflict
+policy replaces `MergeDecision`. A macOS release that changes the
 Stickies format changes `StickiesFormat` alone, and the versioned record codec
 keeps an updated Mac talking to one that has not updated yet.
 
@@ -77,6 +76,12 @@ keeps an updated Mac talking to one that has not updated yet.
 | 33 | `reconcile` detects and records in one transaction; there is no "just tell me what changed" | A caller that could ask without committing would eventually ask twice and act twice. Observing a change exactly once is the property the whole replica exists to provide, and making it optional would put that property in every caller's hands |
 | 34 | A retained version is stored as a single-note `NoteArchive` blob | Reuses the format layer's codec instead of inventing a second serialization for the same data, so history automatically gains anything the archive gains — and a version restored from history is byte-identical to one restored from an exported file, because it is the same bytes through the same decoder |
 | 35 | The schema is a numbered list of migrations, applied on every open | The replica is a cache the user carries across versions of this tool, but it is the *only* home of the version history, so rebuilding it from scratch on a schema change would destroy the thing it exists to hold. Migrations are append-only and `user_version` records progress |
+| 37 | Every choice in `MergeDecision` is a pure function of the two records | Two Macs never talk to each other: each sees the same pair and decides alone. A conflict copy named with a fresh UUID, or a winner chosen by "whoever is resolving", makes the two Macs disagree permanently — each creating conflict copies of the other's conflict copies. So the winner comes from `(recordedAt, origin device)` and the copy's identifier is a SHA-256 of the original identifier and the losing vector. Both Macs compute the same answers from the same inputs |
+| 38 | A conflict copy carries the *loser's* vector, not a fresh one | Each Mac creates the copy independently. If each stamped it with its own new version the two copies would be concurrent and would immediately conflict with each other, forever. Carrying the loser's vector makes the two copies identical, so they compare equal and settle |
+| 39 | A conflict copy is marked by colour and offset, never by editing the note | SPEC.md requires the copy be marked. Prepending a "CONFLICT COPY" line was rejected: building it means re-serializing rich text, which produces different bytes on different Macs (#13) — so the two copies would differ and conflict with each other. A colour and a frame offset are exact numbers both Macs write identically, and they are visible the moment the note appears |
+| 40 | An edit always beats a deletion | A tombstone has nothing to preserve, so this is not a conflict worth showing anyone and no copy is made. It does mean deleting a note on one Mac while editing it on another resurrects the note; that is the direction SPEC.md's first principle says to fail in |
+| 41 | `SyncService` lives in a new `StickiesSyncKit`, not in the CLI | It is the only code that needs both halves — the container and the replica — and putting it in the executable would make it untestable and unavailable to the Milestone 6 app. Everything below it stays ignorant of the other half (#29) |
+| 42 | `integrate` records a history version only when there is content to retain | Found by the convergence test, not by reading the code. A resolution that keeps local content and only advances the vector was writing a history row with a NULL archive — onto the key `(note, device, seq)` that already held that content, erasing it. The Mac then published an older version and quietly overwrote the peer's correct text with stale text. A pass that changes no content now writes no version |
 | 36 | A tombstone row carries no content of its own | The version recorded before the deletion already holds it, and duplicating it would double the storage for every deleted note. `newestRecoverableVersion` skips deletions to find it |
 
 ## Module Layout
@@ -105,12 +110,19 @@ Sources/
     ContainerWriter.swift    Installs packages and merges the state file (#25, #26).
     ApplyCoordinator.swift   Orders the quit, validate, back up, write, relaunch (#23).
     ContainerWatcher.swift   FSEvents over the container subtree.
-  SyncEngine/             Replication. Knows nothing of Macs, containers, or networks (#29).
+  SyncEngine/             Replication. Knows nothing of Macs or containers (#29).
     Database.swift           Thin wrapper over the system SQLite (#30).
     Schema.swift             Numbered, append-only migrations (#35).
     NoteDigest.swift         Separate content and window-state digests (#31).
     VersionVector.swift      Per-note causality; ordering without clocks (#4).
-    Replica.swift            Reconciles notes against belief; history and tombstones.
+    Replica.swift            Reconciles notes against belief; history, tombstones, integration.
+    SyncRecord.swift         One note version as it travels.
+    DeviceManifest.swift     What a Mac claims to hold, without the content.
+    SyncTransport.swift      The transport seam, and FolderTransport (#6).
+    MergeDecision.swift      Deterministic resolution and conflict copies (#37-#40).
+  StickiesSyncKit/        Composition root: the only place store and engine meet (#41).
+    SyncConfiguration.swift  Persisted sync-folder setting.
+    SyncService.swift        One pass: read, reconcile, pull, apply, integrate, publish.
   stickiesctl/            CLI. Presentation only — no logic worth testing lives here.
     StickiesCTL.swift        Command tree.
     CLISupport.swift         Shared --home option, table rendering, stderr reporting.
@@ -122,10 +134,13 @@ Sources/
     WatchCommand.swift       The same, driven by the watcher, until interrupted.
     HistoryCommand.swift     Retained versions, deleted notes included.
     RestoreCommand.swift     Puts a retained version back through the apply path.
+    SyncCommand.swift        One pass or a watching loop over the shared folder.
+    AgentCommand.swift       Installs, removes, and reports on the launchd agent.
 Tests/
   StickiesFormatTests/    Unit and golden-file tests; Fixtures/ holds real captured files.
   StickiesStoreTests/     Probe, reader, writer, and watcher tests against a synthetic home.
   SyncEngineTests/        Digest, vector, and replica tests against an in-memory database.
+  StickiesSyncKitTests/   Two simulated Macs over one shared folder; convergence.
 ```
 
 **Dependency rule:** `StickiesFormat` imports nothing but Foundation and
@@ -400,6 +415,52 @@ here; merging a peer's vector is Milestone 4.
 A tombstoned note stays tombstoned rather than being rediscovered on every later
 scan — the deletion is reported exactly once.
 
+## Syncing between Macs
+
+Each Mac writes only its own subtree, so the service moving the files never has
+to resolve anything (#6):
+
+```
+<sync folder>/devices/<device-id>/manifest.plist
+<sync folder>/devices/<device-id>/records/<sticky-id>.plist
+```
+
+The manifest lists every note the Mac holds with its version vector but no
+content, so a peer reads one small file and fetches only the records it is behind
+on. Records are written before the manifest, so a peer reading mid-publish never
+sees a manifest promising a record that has not landed.
+
+One pass of `SyncService.syncOnce`:
+
+```
+read the container      -> StickiesReader
+reconcile               -> Replica: record what this Mac did since last time
+for each peer manifest
+  for each entry        -> compare vectors; fetch the record only if behind
+                        -> MergeDecision.resolve  (pure; both Macs agree)
+apply everything at once -> ApplyCoordinator: ONE quit/relaunch of Stickies
+integrate               -> Replica: adopt peers' versions under THEIR identity
+publish                 -> transport
+```
+
+Two orderings matter. Applying is a single batch, so ten notes arriving cause one
+blink rather than ten — the coalescing SPEC.md promises. And integration happens
+only *after* the container has taken the write, so a refused or failed apply
+never leaves the replica claiming notes that were never written.
+
+### Resolving one note
+
+| Vectors | Outcome |
+|---------|---------|
+| Never seen | Adopt the peer's record as-is |
+| Equal, or local descends remote | Nothing |
+| Local is an ancestor | Adopt; the note takes the remote vector |
+| Concurrent, one side a deletion | The edit wins, no copy (#40) |
+| Concurrent, both have content | Later writer keeps the identifier; the loser becomes a conflict copy (#37, #38, #39) |
+
+On any concurrent resolution the surviving note takes the *merged* vector. That
+is what stops the two Macs from rediscovering the same conflict on every pass.
+
 ## Known limitations
 
 - **`swift test` does not work on this Mac; `make test` does.** The Command Line
@@ -450,12 +511,25 @@ scan — the deletion is reported exactly once.
   note either way, so a note dragged around repeatedly consumes its twenty
   versions on positions rather than edits. Storing state-only deltas would fix it
   and is not worth the complexity until something demonstrates the need.
-- **An import does not update the replica; the next scan does.** `restore` runs a
-  reconcile itself for that reason, but `import` does not, so a change applied by
-  `import` is attributed to this Mac when the next scan notices it. That is
-  correct today, when every change really does originate here, and is exactly
-  what Milestone 4 has to fix: a note arriving from another Mac must keep that
-  Mac's version, not be re-stamped with this one's.
+- **An import does not update the replica; the next scan does.** `restore` and
+  `sync` both reconcile themselves, but `import` does not, so a change applied by
+  `import` is attributed to this Mac when the next scan notices it. Correct for a
+  hand-run import, which really did originate here.
+- **A sync pass reads and rewrites every record it publishes.** There is no
+  incremental publish: a Mac with a thousand notes serializes a thousand records
+  each pass, even though the transport skips writing the unchanged ones. Fine at
+  the scale Stickies is used at, and the place to fix it is `localRecords`.
+- **Nothing is encrypted yet.** Anything with read access to the sync folder can
+  read every note, and could publish a `devices/` subtree of its own and have it
+  believed. Milestone 5 is what closes both.
+- **A peer that vanishes is never forgotten.** Its `devices/<id>/` subtree stays
+  in the folder and its counters stay in every vector. Harmless but untidy, and
+  there is no `forget-device` command.
+- **Convergence has been verified between two simulated Macs on one machine, not
+  between two real ones.** The test pair shares a filesystem and a clock source;
+  real Macs will not. What that setup cannot exercise: clock skew changing the
+  conflict tiebreak, iCloud Drive or Syncthing delaying or reordering file
+  arrival, and a Mac whose Stickies is running during an apply.
 - **`watch` holds one replica for its lifetime and reopens nothing.** If the
   database is deleted or replaced underneath a running watch, it keeps writing to
   the old file handle until restarted.

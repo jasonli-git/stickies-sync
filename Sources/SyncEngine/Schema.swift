@@ -54,7 +54,16 @@ enum Schema {
         );
 
         CREATE INDEX note_versions_by_note ON note_versions (sticky_id, recorded_at DESC);
+        """,
+
         """
+        -- Which Mac's change produced the note's current state. Needed to
+        -- publish a record: a note relayed through this Mac must keep the
+        -- originating device, not be re-attributed to whoever passed it on.
+        -- Existing rows predate any syncing, so they originated here, and the
+        -- empty default is rewritten to this device on the next reconcile.
+        ALTER TABLE notes ADD COLUMN origin_device TEXT NOT NULL DEFAULT '';
+        """,
     ]
 
     /// Applies whatever has not been applied yet. Safe to call on every open.

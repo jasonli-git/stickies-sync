@@ -25,6 +25,14 @@ marked optional: v1 is complete without them (see the non-goals in
 
 ## Post-v1 (not scheduled)
 
+- Optional Markdown interoperability — `.md` import and export, converted through
+  `NSAttributedString`, as a bridge to other tools. The rich-text package stays
+  the canonical representation and Markdown never enters the sync path, so it
+  costs ordinary syncing nothing. That separation is also what makes it safe:
+  converting through `NSAttributedString` is lossy in exactly the way
+  [ARCHITECTURE.md](ARCHITECTURE.md) #13 refuses for replication, and it is only
+  acceptable here because the result is handed to the user rather than written
+  back over the bytes a note is made of
 - Character-level merge of rich text, replacing conflict copies where the change
   is unambiguous
 - Syncing Stickies application preferences (default colour, translucency)

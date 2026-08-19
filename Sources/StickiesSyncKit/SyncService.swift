@@ -85,7 +85,13 @@ public struct SyncService {
         //    published and compared is current.
         let snapshot = try reader.read()
         outcome.warnings += snapshot.problemWarnings
-        outcome.localChanges = dryRun ? [] : try replica.reconcile(with: snapshot.notes)
+        outcome.localChanges =
+            dryRun
+            ? []
+            : try replica.reconcile(
+                with: snapshot.notes,
+                presentButUnreadable: snapshot.unreadableNoteIDs
+            )
 
         // 2. Decide, against every peer.
         let plan = try makePlan(&outcome, placedBy: snapshot)

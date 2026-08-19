@@ -45,6 +45,15 @@ public struct StickiesSnapshot: Hashable, Sendable {
     public var notesWithoutState: [StickyNote] {
         notes.filter { $0.windowState == nil }
     }
+
+    /// Packages that are on disk but were not read, as identifiers.
+    ///
+    /// Every caller that reconciles has to hand these to the replica: they are
+    /// missing from `notes`, and a note missing from `notes` is otherwise taken
+    /// for a deleted one and published as a tombstone.
+    public var unreadableNoteIDs: Set<StickyID> {
+        Set(unreadableNotes.map(\.id))
+    }
 }
 
 /// Reads a Stickies container into a `StickiesSnapshot`. Read-only: nothing in

@@ -1,9 +1,9 @@
 # StickiesSync — Roadmap
 
-Milestone 4 shipped as v0.5.0 on 2026-08-17: notes now sync between Macs over a
-shared folder, with conflicts resolved into visible copies, and a `launchd` agent
-to run it. Convergence is verified between two simulated Macs on one machine;
-verification between two real Macs is outstanding. A
+Milestone 4 shipped as v0.5.0 on 2026-08-17 and has been corrected four times
+since, through v0.5.5 on 2026-08-19: notes sync between Macs over a shared folder,
+with conflicts resolved into visible copies, and a `launchd` agent to run it.
+Convergence is verified between two simulated Macs and between two real ones. A
 milestone is done when its capability works end to end, its tests pass, the six
 project documents match the code, and the user has reviewed it. Milestones 6 and
 7 are marked optional: v1 is complete without them (see the non-goals in

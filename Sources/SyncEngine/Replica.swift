@@ -186,8 +186,19 @@ public final class Replica {
     /// ask "what changed?" without committing the answer would eventually ask
     /// twice and act twice, and the whole point of the replica is that a change
     /// is observed exactly once.
+    ///
+    /// `presentButUnreadable` names the notes that are on disk but could not be
+    /// read this pass. They are neither current nor absent, and conflating them
+    /// with absent is data loss: absence means deleted, and a deletion is
+    /// published. Seen in the field — one transient `EINTR` reading a package
+    /// tombstoned a live note and sent the tombstone to the other Mac, which
+    /// deleted it. A caller that knows the difference must say so; these are left
+    /// exactly as the replica already believed them to be.
     @discardableResult
-    public func reconcile(with notes: [StickyNote]) throws -> [NoteChange] {
+    public func reconcile(
+        with notes: [StickyNote],
+        presentButUnreadable: Set<StickyID> = []
+    ) throws -> [NoteChange] {
         try database.transaction {
             let timestamp = now()
             var known = try knownNotesByID()
@@ -271,9 +282,12 @@ public final class Replica {
                 )
             }
 
-            // Whatever is left in `known` was not on disk. A note already
-            // tombstoned stays tombstoned rather than being reported again.
-            for (id, existing) in known.sorted(by: { $0.key < $1.key }) where !existing.isDeleted {
+            // Whatever is left in `known` was not among the notes read. A note
+            // already tombstoned stays tombstoned rather than being reported
+            // again, and one that is on disk but unreadable was never absent —
+            // only unread, which is not something to tell another Mac about.
+            for (id, existing) in known.sorted(by: { $0.key < $1.key })
+            where !existing.isDeleted && !presentButUnreadable.contains(id) {
                 try upsertNote(id, digest: existing.digest, isDeleted: true, origin: deviceID, at: timestamp)
                 let version = try bumpVersion(of: id, from: existing.version)
                 try recordVersion(id, seq: version[deviceID], note: nil, isDeletion: true, at: timestamp)

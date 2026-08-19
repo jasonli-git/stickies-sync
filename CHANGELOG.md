@@ -3,6 +3,29 @@
 All notable changes to StickiesSync. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.5.5] — 2026-08-19
+
+### Fixed
+
+- **A note that could not be read was published as a deletion, and the other Mac
+  deleted it.** `StickiesReader` keeps an unreadable package out of the snapshot's
+  notes, `Replica.reconcile` read that absence as a deletion, and `SyncService`
+  published the tombstone. Found in the field rather than by review: on 2026-08-19
+  the mini's agent hit a transient `EINTR` reading a package, reported
+  `- 53975D6B… deleted (here)`, published the tombstone, and reported
+  `^ … reappeared` on the next pass — so the note vanished on the MacBook Pro and
+  came back. The unexplained container-access lapse seen earlier on the laptop
+  fails every read at once, which would have tombstoned the entire container.
+  `reconcile` now takes the identifiers that are present but unread and leaves
+  them exactly as it already believed them to be (ARCHITECTURE #53). The exemption
+  is per-note: a genuine deletion alongside an unreadable note still travels.
+
+### Added
+
+- Four tests, each verified to fail before the change — two over the replica and
+  two over the two-Mac pair, the latter reproducing the observed log including the
+  tombstone arriving in the peer's recoverable list.
+
 ## [0.5.4] — 2026-08-18
 
 ### Fixed

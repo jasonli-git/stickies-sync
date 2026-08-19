@@ -88,6 +88,49 @@ struct ConvergenceTests {
         }
     }
 
+    @Test("A note this Mac cannot read is not deleted on the other one")
+    func doesNotPropagateAFailedRead() throws {
+        try SimulatedMac.pair { a, b, _ in
+            try a.writeNote("A0000000-0000-0000-0000-000000000001", text: "Still here")
+            try settle(a, b)
+            #expect(try b.notes().count == 1)
+
+            // Observed on the live agent, 2026-08-19: one pass could not read a
+            // package (`EINTR`), reported it deleted, published the tombstone,
+            // and the note vanished on the other Mac until the next pass read it
+            // again. A note that cannot be read is not a note that is gone.
+            a.clock.advance()
+            try a.makeNoteUnreadable("A0000000-0000-0000-0000-000000000001")
+            let outcome = try a.sync()
+            try settle(a, b)
+
+            #expect(outcome.localChanges.isEmpty)
+            #expect(outcome.warnings.contains { $0.contains("cannot read note") })
+            #expect(try b.notes().count == 1)
+            #expect(try b.text(of: "A0000000-0000-0000-0000-000000000001")?.contains("Still here") == true)
+            #expect(try b.replica.recoverableDeletedNotes().isEmpty)
+        }
+    }
+
+    @Test("An unreadable note does not stop a real deletion travelling")
+    func stillPropagatesRealDeletionsAroundAnUnreadableNote() throws {
+        try SimulatedMac.pair { a, b, _ in
+            try a.writeNote("A0000000-0000-0000-0000-000000000001", text: "Unreadable soon")
+            try a.writeNote("A0000000-0000-0000-0000-000000000002", text: "Genuinely deleted")
+            try settle(a, b)
+            #expect(try b.notes().count == 2)
+
+            // The narrow rule, per #16 and #24: one unreadable note costs that
+            // note, never the pass.
+            a.clock.advance()
+            try a.makeNoteUnreadable("A0000000-0000-0000-0000-000000000001")
+            try a.deleteNote("A0000000-0000-0000-0000-000000000002")
+            try settle(a, b)
+
+            #expect(try b.notes().map(\.id.rawValue) == ["A0000000-0000-0000-0000-000000000001"])
+        }
+    }
+
     @Test("Nothing happens on a pass with no changes")
     func quiescesWhenNothingChanges() throws {
         try SimulatedMac.pair { a, b, _ in

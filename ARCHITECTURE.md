@@ -94,6 +94,7 @@ keeps an updated Mac talking to one that has not updated yet.
 | 50 | Authorship transferred by pre-0.5.1 geometry publishes is left as it stands, not unwound | Every note in the shared folder now names the laptop as origin, including three the desktop Mac wrote — because before geometry was made machine-local, those window-only publishes were *genuine authored versions*, so the attribution is accurate to what happened. It is also harmless: `origin`'s two load-bearing uses, the conflict tiebreak and the conflict-copy identifier, need only to be deterministic and identical on both Macs, which they are. This does not contradict the relay rule in migration 2 — relaying preserves origin, and a Mac publishing its own new version is not relaying. Rewriting history to say otherwise would be inventing a past |
 | 51 | Assume nothing about whether reading the container needs a TCC grant. **Supersedes #19.** Grant Full Disk Access to whatever runs `stickiesctl`, and make a denial say so | #19 claimed no permission is needed, inferred from a process that was denied `TCC.db` and `~/Library/Safari` yet read the container. The inference does not hold: a second Mac lost container *and* iCloud-folder access mid-session with `Operation not permitted` — Unix permissions and the sandbox both ruled out — and regained it only when Full Disk Access was granted. Re-measuring on this Mac with the sandbox disabled shows the pattern is not uniform either: Stickies, Calculator and Preview containers read fine while **Notes**, Safari, Mail and Messages are denied in the same run, so Apple gates *specific* applications rather than containers as a class. The two Macs cannot both be explained by any rule this project understands, so the code stops asserting one: `doctor` now names the grant as the remedy instead of calling a denial "unexpected", and `agent install` refuses to install against an unreadable container |
 | 52 | `agent install` preflights the container, and `sync --watch` states readability in its opening banner | An agent that cannot read the container still launches, still logs, and syncs nothing — failing every thirty seconds into a file nobody opens. Failing once, loudly, in front of whoever typed the command is worth more than any amount of logging. The banner exists because after a reboot the log's first lines are the only evidence available, and "did this job inherit enough access to do anything" is precisely what a `launchd` job cannot answer in advance |
+| 53 | A note that is on disk but unreadable is not a deletion. `reconcile` is told which identifiers were present but unread, and leaves them alone | A package that cannot be read is absent from the snapshot's notes, and absence is precisely what the replica reads as a deletion — so one failed read publishes a tombstone and every other Mac deletes a live note. Not hypothetical: on 2026-08-19 the mini's agent hit a transient `EINTR` reading a package, reported `deleted (here)`, published the tombstone, and reported `reappeared` on the next pass. The container-access lapse seen on the laptop fails *every* read at once, which would have tombstoned the whole container on the peer. Rejected: failing the whole pass when anything is unreadable — the over-strict rule #24 already rejected for writes, where one odd note would stop every other note syncing. `StickiesSnapshot.unreadableNoteIDs` is what a caller hands over; the parameter defaults to empty so a caller with no such concept behaves as before, which is a knowingly accepted hazard — the two callers that can tell the difference pass it explicitly |
 | 36 | A tombstone row carries no content of its own | The version recorded before the deletion already holds it, and duplicating it would double the storage for every deleted note. `newestRecoverableVersion` skips deletions to find it |
 
 ## Module Layout
@@ -583,11 +584,24 @@ is what stops the two Macs from rediscovering the same conflict on every pass.
 - **A peer that vanishes is never forgotten.** Its `devices/<id>/` subtree stays
   in the folder and its counters stay in every vector. Harmless but untidy, and
   there is no `forget-device` command.
-- **Convergence has been verified between two simulated Macs on one machine, not
-  between two real ones.** The test pair shares a filesystem and a clock source;
-  real Macs will not. What that setup cannot exercise: clock skew changing the
+- **Convergence is verified between two simulated Macs and, since 2026-08-18,
+  between two real ones** over iCloud Drive, in both directions and through a
+  display-configuration change. Still unexercised: clock skew changing the
   conflict tiebreak, iCloud Drive or Syncthing delaying or reordering file
-  arrival, and a Mac whose Stickies is running during an apply.
+  arrival, a Mac whose Stickies is running during an apply, and Syncthing as the
+  underlying transport at all.
+- **A note that stays unreadable keeps publishing its last good version.** Since
+  an unreadable note is no longer treated as deleted (#53), a package that is
+  permanently broken sits in the folder as whatever was last read successfully,
+  and the only signal is one warning per pass in the log. That is the intended
+  direction to fail in, but it does mean silence in the log is what tells you a
+  note is healthy, not the note's presence in the folder.
+- **Nothing locks the container between processes.** A hand-run `stickiesctl`
+  command and the installed agent can both be inside `ApplyCoordinator` at once,
+  each having quit Stickies and each writing. The frontmost check and the
+  ownership guard are both within one process. Not observed, and avoided by hand
+  by stopping the agent before running an apply; a lockfile under Application
+  Support, or making the agent the only writer, is the fix.
 - **`watch` holds one replica for its lifetime and reopens nothing.** If the
   database is deleted or replaced underneath a running watch, it keeps writing to
   the old file handle until restarted.

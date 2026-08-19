@@ -182,6 +182,6 @@ sandbox forbids reading another application's container regardless of TCC.
 
 ## Status
 
-v0.5.4 — Milestones 0 through 4 of 7 complete. Notes sync between Macs, verified
+v0.5.5 — Milestones 0 through 4 of 7 complete. Notes sync between Macs, verified
 between two real ones. Nothing on the wire is encrypted yet. Progress is in
 [ROADMAP.md](ROADMAP.md); what shipped is in [CHANGELOG.md](CHANGELOG.md).

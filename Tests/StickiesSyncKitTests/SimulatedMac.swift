@@ -124,6 +124,24 @@ final class SimulatedMac {
         )
     }
 
+    /// Leaves the note on disk but makes this Mac unable to read it.
+    ///
+    /// A nested directory inside the package is the deterministic stand-in for
+    /// what happened in the field, where the read failed with a transient
+    /// `EINTR`: either way the package exists and `StickiesReader` cannot turn it
+    /// into a note. What is being tested is the reaction, which is identical.
+    func makeNoteUnreadable(_ raw: String) throws {
+        guard let id = StickyID(rawValue: raw) else {
+            throw FixtureError(description: "\(raw) is not a usable sticky identifier")
+        }
+        try fileManager.createDirectory(
+            at: ContainerLocator.stickiesDirectory(homeDirectory: home)
+                .packageURL(for: id)
+                .appending(path: "Attachments", directoryHint: .isDirectory),
+            withIntermediateDirectories: true
+        )
+    }
+
     func deleteNote(_ raw: String) throws {
         guard let id = StickyID(rawValue: raw) else {
             throw FixtureError(description: "\(raw) is not a usable sticky identifier")

@@ -36,7 +36,13 @@ struct ContainerOptions: ParsableArguments {
     /// store and the engine meet.
     func reconcile(_ replica: Replica) throws -> (changes: [NoteChange], snapshot: StickiesSnapshot) {
         let snapshot = try StickiesReader.forHome(home).read()
-        return (try replica.reconcile(with: snapshot.notes), snapshot)
+        return (
+            try replica.reconcile(
+                with: snapshot.notes,
+                presentButUnreadable: snapshot.unreadableNoteIDs
+            ),
+            snapshot
+        )
     }
 }
 

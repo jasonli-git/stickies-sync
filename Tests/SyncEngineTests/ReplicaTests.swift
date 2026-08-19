@@ -165,6 +165,49 @@ struct ReplicaTests {
         #expect(try replica.reconcile(with: [try note("17")]).isEmpty)
     }
 
+    @Test("A note that is on disk but unreadable is not mistaken for a deletion")
+    func doesNotTombstoneAnUnreadableNote() throws {
+        let clock = TestClock()
+        let replica = try makeReplica(clock: clock)
+        _ = try replica.reconcile(with: [try note("17"), try note("18")])
+        clock.advance()
+
+        // 18 is still on disk; this pass simply could not read it.
+        let changes = try replica.reconcile(
+            with: [try note("17")],
+            presentButUnreadable: [try stickyID("18")]
+        )
+
+        #expect(changes.isEmpty)
+        #expect(try replica.knownNote(try stickyID("18"))?.isDeleted == false)
+
+        // Nothing new to say about it, so its published record is untouched:
+        // still content, still version 1. Publishing a tombstone here is what
+        // deleted a live note on the other Mac.
+        let record = try #require(try replica.localRecord(try stickyID("18")))
+        #expect(record.isDeletion == false)
+        #expect(record.note != nil)
+        #expect(record.version[replica.deviceID] == 1)
+    }
+
+    @Test("An unreadable note does not stop a real deletion being recorded")
+    func tombstonesRealDeletionsAlongsideAnUnreadableNote() throws {
+        let clock = TestClock()
+        let replica = try makeReplica(clock: clock)
+        _ = try replica.reconcile(with: [try note("17"), try note("18"), try note("19")])
+        clock.advance()
+
+        let changes = try replica.reconcile(
+            with: [try note("17")],
+            presentButUnreadable: [try stickyID("18")]
+        )
+
+        // 19 really is gone. The exemption is per-note, not a reason to stop
+        // recording deletions.
+        #expect(changes.map(\.id.rawValue) == ["19"])
+        #expect(changes.map(\.kind) == [.deleted])
+    }
+
     @Test("A deleted note that comes back is distinguished from a new one")
     func detectsAReappearance() throws {
         let clock = TestClock()

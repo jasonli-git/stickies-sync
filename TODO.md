@@ -265,6 +265,12 @@ Working list for the current milestone. Longer-horizon items live in
 - Note: a peer that goes away is never forgotten — its subtree stays in the
   folder and its counters stay in every vector. Harmless, untidy, and there is
   no `forget-device` command.
+- [x] **Fixed in 0.5.5.** `Replica.reconcile` now takes `presentButUnreadable` and
+      leaves those notes exactly as it already believed them (ARCHITECTURE #53);
+      `StickiesSnapshot.unreadableNoteIDs` is what the two real callers hand it.
+      Four tests, all four verified failing before the change — the convergence
+      one reproduces the log line for line, down to the tombstone landing in the
+      peer's recoverable list.
 - Note: **a note that cannot be read is published as a deletion.** Observed on the
   mini's live agent, 2026-08-19, in `~/Library/Logs/StickiesSync.log`: one pass
   reported `- 53975D6B… deleted (here)` and published the tombstone, and the

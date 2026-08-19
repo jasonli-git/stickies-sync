@@ -349,7 +349,15 @@ published by anything that lacks the key is refused rather than applied.
       idle pass still writing zero bytes — 216 tests
 - [x] The whole flow driven through the real CLI with two synthetic Macs,
       including the wrong-code refusal
-- [ ] Verified across the two real Macs
+- [ ] Verified across the two real Macs — **half done, 2026-08-19.** The mini
+      migrated against the real iCloud folder: `vault init`, agent restarted, its
+      four records republished as sealed `.rec` files under opaque names, and its
+      old plaintext `.plist` records pruned by that first publish exactly as
+      designed. It refuses the laptop by name — `ignoring what 8C9EF3BF… published
+      — this is not sealed data — it looks like a record from before encryption` —
+      and `vault status` exits non-zero. Outstanding: the laptop's own migration,
+      and pairing between two real Macs, which is the half a single machine cannot
+      test.
 
 - Note: the code is twelve characters, not the eight first sketched. The attack
   it defends against is grinding a keypair whose code matches the one about to be

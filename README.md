@@ -87,7 +87,7 @@ more transports — and are tracked in [ROADMAP.md](ROADMAP.md).
 - **Encryption:** CryptoKit — AES-GCM with HKDF-derived subkeys for sealing,
   X25519 for pairing. The vault key lives in an owner-only file beside the
   replica.
-- **Tests:** swift-testing, 216 tests, including golden-file tests against a real
+- **Tests:** swift-testing, 225 tests, including golden-file tests against a real
   `.SavedStickiesState`, a byte-for-byte export→wipe→import round trip, and two
   simulated Macs converging over one sealed folder.
 
@@ -226,7 +226,7 @@ sandbox forbids reading another application's container regardless of TCC.
 
 ## Status
 
-v0.6.0 — Milestones 0 through 5 of 7 complete, and the two that remain are
+v0.6.1 — Milestones 0 through 5 of 7 complete, and the two that remain are
 optional. Notes sync between Macs, verified between two real ones, and the sync
 folder now holds nothing readable. Both real Macs were migrated, paired, and seen
 exchanging notes sealed in both directions over iCloud Drive on 2026-08-19.

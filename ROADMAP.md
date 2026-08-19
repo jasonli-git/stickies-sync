@@ -45,6 +45,18 @@ marked optional: v1 is complete without them (see the non-goals in
     goes to the user; writing it back over a note's bytes is the lossy round
     trip [ARCHITECTURE.md](ARCHITECTURE.md) #13 exists to refuse, and every
     rewritten note would replicate as a genuine edit to every Mac.
+- Measure what the agent actually costs — resident memory, CPU per pass and at
+  idle, disk written, and bytes pushed through iCloud over a day. None of it has
+  ever been measured, which is a gap worth closing for something that runs
+  unattended on every Mac the user owns. Three things make it more than curiosity:
+  the FSEvents watcher and the SQLite replica are both held open for the agent's
+  whole lifetime; a pass serializes and re-seals *every* record it publishes
+  rather than only what changed, so the cost grows with the number of notes rather
+  than the number of edits (see the limitation in
+  [ARCHITECTURE.md](ARCHITECTURE.md)); and the thirty-second backstop sets a floor
+  on how often that happens. `agent status` reporting the job's resident size and
+  accumulated CPU from `launchctl` would be the cheap first version; a real answer
+  needs sampling over a day against a container with a realistic number of notes
 - A git repository as a transport — a `GitTransport` conforming to the same three
   methods `FolderTransport` does, pulling before a pass and committing and pushing
   its own subtree after. Distinct from the shared-directory transport, which

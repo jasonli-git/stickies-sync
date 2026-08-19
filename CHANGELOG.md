@@ -3,6 +3,28 @@
 All notable changes to StickiesSync. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.6.1] — 2026-08-19
+
+### Fixed
+
+- **The agent logged nothing about a pass that only warned.** Its loop reported a
+  pass that "did anything", and warnings did not count as anything — so a pass
+  whose apply was refused because Stickies was frontmost, or that found a peer it
+  could not open, wrote nothing to the log at all. A note would simply never
+  arrive, with no explanation anywhere. Found while watching the log stay silent
+  for three minutes on real hardware; it is the same fault fixed for the one-shot
+  `sync` path in 0.6.0, in the path that was not checked then.
+- A persistent warning is now stated once when it starts and once when it clears,
+  rather than on every pass. The naive fix would have written the same line about
+  an unpaired Mac twice a minute forever, which buries everything worth reading as
+  effectively as silence does.
+
+### Added
+
+- `PassReporter` in `StickiesSyncKit` decides whether a pass is worth surfacing,
+  so the agent's log and the Milestone 6 menu bar app cannot drift into different
+  opinions about it — the same argument as #8. Nine tests.
+
 ## [0.6.0] — 2026-08-19
 
 Milestone 5. Nothing in the sync folder is readable any more, and nothing

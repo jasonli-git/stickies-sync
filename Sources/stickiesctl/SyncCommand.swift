@@ -188,6 +188,9 @@ private final class SyncRunner: @unchecked Sendable {
 
     private let service: SyncService
     private let replica: Replica
+    /// Mutated only from `queue`, which is serial, so the pass that decides what
+    /// to log is never racing another one.
+    private var reporter = PassReporter()
 
     init(service: SyncService, replica: Replica) {
         self.service = service
@@ -198,12 +201,16 @@ private final class SyncRunner: @unchecked Sendable {
         queue.async { [self] in
             do {
                 let outcome = try service.syncOnce()
-                guard outcome.didAnything || label != nil else { return }
+                let decision = reporter.decide(outcome, explicit: label != nil)
+                guard decision.shouldReport else { return }
 
                 if let label { print("[\(label)]") }
                 print(SyncCommand.render(outcome, replica: replica))
                 for warning in outcome.warnings {
                     printError(warning)
+                }
+                if decision.warningsCleared {
+                    print("The warnings above this line no longer apply.")
                 }
             } catch {
                 // A folder that has gone away — an unmounted share, iCloud

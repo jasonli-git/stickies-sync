@@ -391,7 +391,12 @@ published by anything that lacks the key is refused rather than applied.
   silently. Recorded as a limitation in [ARCHITECTURE.md](ARCHITECTURE.md); the
   real fix is for the transport to ask whether a file is merely undownloaded and
   request it, rather than treating every unreadable file as missing.
-- [ ] **A pass that only warns is logged as nothing at all.** `SyncRunner.run`
+- [x] **Fixed in 0.6.1** by `PassReporter` in `StickiesSyncKit`, which reports a
+      pass that says something the last reported one did not — so a standing
+      warning is stated at onset and again when it clears, never every thirty
+      seconds. In the library rather than the CLI for #8's reason: the menu bar
+      app needs the same judgement. Nine tests, 225 in total.
+- [ ] ~~**A pass that only warns is logged as nothing at all.**~~ `SyncRunner.run`
       guards on `outcome.didAnything || label != nil`, and `didAnything` counts
       adopted notes and local changes but not warnings — so a pass that finds a
       peer it cannot open, or has its apply refused because Stickies is frontmost,

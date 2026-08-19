@@ -44,6 +44,25 @@ marked optional: v1 is complete without them (see the non-goals in
     goes to the user; writing it back over a note's bytes is the lossy round
     trip [ARCHITECTURE.md](ARCHITECTURE.md) #13 exists to refuse, and every
     rewritten note would replicate as a genuine edit to every Mac.
+- A git repository as a transport — a `GitTransport` conforming to the same three
+  methods `FolderTransport` does, pulling before a pass and committing and pushing
+  its own subtree after. Distinct from the shared-directory transport, which
+  already covers iCloud Drive, Syncthing, Dropbox and SMB with no code at all,
+  because nothing keeps a repository in step on its own: the pull and the push
+  are the transport's job. Points in its favour and against:
+  - The write-disjoint layout (#6) suits it. Each Mac only ever touches paths
+    under its own `devices/<id>/`, so two Macs pushing concurrently produce
+    disjoint trees that merge without conflict; a fetch-rebase-push retry loop
+    covers the race on the ref itself.
+  - Encryption comes free (#55). The transport moves opaque bytes, so a repo
+    holds ciphertext without a line of crypto in the transport.
+  - Every version is kept forever, which is either the feature or the problem.
+    It sits awkwardly beside the twenty-versions-per-note retention, and a
+    deleted note's ciphertext stays in the history after the tombstone
+    propagates.
+  - Sealed records do not delta-compress; each edit stores a whole new blob.
+    Irrelevant at the size Stickies notes are, worth knowing before pointing it
+    at anything larger.
 - Character-level merge of rich text, replacing conflict copies where the change
   is unambiguous
 - Syncing Stickies application preferences (default colour, translucency)

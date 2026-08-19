@@ -3,8 +3,9 @@
 How the system is built and why. [SPEC.md](SPEC.md) is the source of truth for
 what it should do; this document covers the structure chosen to do it, the
 decisions behind that structure, and what is known to be wrong or unproven. As
-of Milestone 4 notes move between Macs over a shared folder, with conflicts
-resolved into visible copies. Everything below distinguishes what exists from
+of Milestone 5 notes move between Macs over a shared folder with conflicts
+resolved into visible copies, and nothing in that folder is readable or
+believable without the vault key. Everything below distinguishes what exists from
 what is designed but not yet written.
 
 ## System Shape
@@ -95,6 +96,11 @@ keeps an updated Mac talking to one that has not updated yet.
 | 51 | Assume nothing about whether reading the container needs a TCC grant. **Supersedes #19.** Grant Full Disk Access to whatever runs `stickiesctl`, and make a denial say so | #19 claimed no permission is needed, inferred from a process that was denied `TCC.db` and `~/Library/Safari` yet read the container. The inference does not hold: a second Mac lost container *and* iCloud-folder access mid-session with `Operation not permitted` — Unix permissions and the sandbox both ruled out — and regained it only when Full Disk Access was granted. Re-measuring on this Mac with the sandbox disabled shows the pattern is not uniform either: Stickies, Calculator and Preview containers read fine while **Notes**, Safari, Mail and Messages are denied in the same run, so Apple gates *specific* applications rather than containers as a class. The two Macs cannot both be explained by any rule this project understands, so the code stops asserting one: `doctor` now names the grant as the remedy instead of calling a denial "unexpected", and `agent install` refuses to install against an unreadable container |
 | 52 | `agent install` preflights the container, and `sync --watch` states readability in its opening banner | An agent that cannot read the container still launches, still logs, and syncs nothing — failing every thirty seconds into a file nobody opens. Failing once, loudly, in front of whoever typed the command is worth more than any amount of logging. The banner exists because after a reboot the log's first lines are the only evidence available, and "did this job inherit enough access to do anything" is precisely what a `launchd` job cannot answer in advance |
 | 53 | A note that is on disk but unreadable is not a deletion. `reconcile` is told which identifiers were present but unread, and leaves them alone | A package that cannot be read is absent from the snapshot's notes, and absence is precisely what the replica reads as a deletion — so one failed read publishes a tombstone and every other Mac deletes a live note. Not hypothetical: on 2026-08-19 the mini's agent hit a transient `EINTR` reading a package, reported `deleted (here)`, published the tombstone, and reported `reappeared` on the next pass. The container-access lapse seen on the laptop fails *every* read at once, which would have tombstoned the whole container on the peer. Rejected: failing the whole pass when anything is unreadable — the over-strict rule #24 already rejected for writes, where one odd note would stop every other note syncing. `StickiesSnapshot.unreadableNoteIDs` is what a caller hands over; the parameter defaults to empty so a caller with no such concept behaves as before, which is a knowingly accepted hazard — the two callers that can tell the difference pass it explicitly |
+| 54 | One symmetric vault key shared by all of the user's Macs, in an owner-only file rather than the Keychain | Sealing each record to each device's public key would mean N wrapped copies of every record and a re-publish of everything whenever a Mac joins, and it buys revocation worth nothing here: a Mac that leaves already holds every note in plaintext on its own disk. Per-record keys wrapped per device is the seam if notes are ever shared between *people*, which SPEC.md lists as a non-goal. As for the file: anything able to read it can already read the plaintext notes it protects, since Stickies' own container is two directories away and nobody encrypts it — so a file is not a weaker position than the thing being protected. The Keychain would be stronger only against a threat that is not in the model, and it costs real breakage: an unsigned command-line tool's Keychain access is bound to the binary, so every rebuild can raise an authorization prompt, including for the background agent where there is nobody to answer it. `VaultStore` is the protocol if that trade ever changes |
+| 55 | `SyncTransport` carries opaque bytes under opaque names, not `SyncRecord` and `DeviceManifest` | Encryption has to sit *above* the transport, or every future transport reimplements it and each one has to be trusted. Moving the seam down to bytes is also what SPEC.md principle 5 already said a transport is — "any medium that can carry opaque files" — so this repairs a drift rather than inventing a layer. `SealedChannel` is now the only path from `SyncService` to a transport, which makes encryption structural: there is no code path that reaches a transport without a `Vault`. Rejected: sealing inside `FolderTransport`, which leaves Milestone 7's transports to repeat it; and sealing in `SyncService`, which would blur the boundary #29 and #41 exist to hold |
+| 56 | Sealing is deterministic — the nonce is derived from what is being sealed, not random | Nothing to do with secrecy: #48 and #49 were measured against a real iCloud folder and require that an unchanged note re-publishes to *byte-identical* bytes, because a syncing service re-uploads anything whose mtime moved. A random nonce reseals differently every pass, so an agent polling every thirty seconds would push the whole folder daily and wake every other Mac for it — silently undoing both. The synthetic-IV construction (nonce = HMAC over the context and the plaintext) keeps identical inputs identical while giving distinct inputs distinct nonces, which is what AES-GCM actually requires. Conceded: an observer can tell that a record did not change, which its modification time already told them |
+| 57 | Encryption is mandatory; there is no unencrypted mode | SPEC.md F13 asks that a transport the user does not control never sees plaintext, and principle 6 says to degrade to inaction. A "just this once" flag is exactly the kind that stays on. Enforced by the type system rather than a check: `SealedChannel` cannot be built without a `Vault`. The cost is a migration with an order to it — every Mac needs the key before it can sync again — and it is paid once, loudly, with the remedy named in the refusal |
+| 58 | Pairing is verified by a code the user carries between the two Macs, not by anything in the folder | Anything with write access to the folder can publish a pairing request of its own and be handed the vault, so the folder cannot establish who is asking. A person standing at both Macs can. Twelve characters rather than eight, because the attack is grinding a keypair whose code matches the one about to be read out, and 40 bits of that is hours of GPU time where 60 bits is not. The reverse direction is deliberately unverified: an attacker who replaces the *grant* cannot produce the vault key, so the joining Mac ends up unable to open anything — a denial of service, not a compromise, provided it is loud, which is why `pair complete` and `vault status` count what actually opens |
 | 36 | A tombstone row carries no content of its own | The version recorded before the deletion already holds it, and duplicating it would double the storage for every deleted note. `newestRecoverableVersion` skips deletions to find it |
 
 ## Module Layout
@@ -131,7 +137,11 @@ Sources/
     Replica.swift            Reconciles notes against belief; history, tombstones, integration.
     SyncRecord.swift         One note version as it travels.
     DeviceManifest.swift     What a Mac claims to hold, without the content.
-    SyncTransport.swift      The transport seam, and FolderTransport (#6).
+    SyncTransport.swift      The transport seam, carrying bytes, and FolderTransport (#6, #55).
+    SealedChannel.swift      Notes in, sealed blobs out; the only route to a transport (#55).
+    Vault.swift              The shared key, its subkeys, and deterministic sealing (#54, #56).
+    VaultStore.swift         The key and this Mac's identity keypair, owner-only (#54).
+    Pairing.swift            Codes, X25519 grants, and the folder's pairing area (#58).
     MergeDecision.swift      Deterministic resolution and conflict copies (#37-#40).
   StickiesSyncKit/        Composition root: the only place store and engine meet (#41).
     SyncConfiguration.swift  Persisted sync-folder setting.
@@ -148,6 +158,8 @@ Sources/
     HistoryCommand.swift     Retained versions, deleted notes included.
     RestoreCommand.swift     Puts a retained version back through the apply path.
     SyncCommand.swift        One pass or a watching loop over the shared folder.
+    VaultCommand.swift       status, init, reset.
+    PairCommand.swift        request, list, approve, complete.
     AgentCommand.swift       Installs, removes, and reports on the launchd agent.
 Tests/
   StickiesFormatTests/    Unit and golden-file tests; Fixtures/ holds real captured files.
@@ -443,14 +455,19 @@ Each Mac writes only its own subtree, so the service moving the files never has
 to resolve anything (#6):
 
 ```
-<sync folder>/devices/<device-id>/manifest.plist
-<sync folder>/devices/<device-id>/records/<sticky-id>.plist
+<sync folder>/devices/<device-id>/manifest.plist          sealed
+<sync folder>/devices/<device-id>/records/<name>.rec      sealed
+<sync folder>/pairing/<device-id>/request.plist           not sealed; carries no secret
+<sync folder>/pairing/<device-id>/grants/<device-id>.plist   the vault key, wrapped
 ```
 
 The manifest lists every note the Mac holds with its version vector but no
 content, so a peer reads one small file and fetches only the records it is behind
 on. Records are written before the manifest, so a peer reading mid-publish never
 sees a manifest promising a record that has not landed.
+
+`<name>` is `HMAC(name subkey, sticky id)`, so both Macs derive the same filename
+without exchanging it and the folder does not list the user's note identifiers.
 
 One pass of `SyncService.syncOnce`:
 
@@ -502,6 +519,53 @@ laptop — real, but a preference rather than the silent drift geometry produced
 
 On any concurrent resolution the surviving note takes the *merged* vector. That
 is what stops the two Macs from rediscovering the same conflict on every pass.
+
+## Encryption
+
+The sync folder is the untrusted part; the Mac is not (#54). Everything below
+follows from that.
+
+| Threat | Answer |
+|--------|--------|
+| Reading the folder | Records and manifests are sealed with AES-GCM under a key the transport never sees |
+| Publishing a `devices/` subtree and being believed | The same seal is the authenticator — bytes not written under the key fail to open, are named, and are skipped |
+| Moving a sealed file to another note or another Mac's subtree | The ciphertext is bound to (format, vault, publishing device, name) as associated data |
+| Replaying an old record | Inert: version vectors only move forward, so an old vector is an ancestor and is ignored |
+| Deleting files from the folder | Not addressed. Denial of service, and no encryption prevents it |
+| Note count, sizes, and timing | Not addressed. Padding and decoy records are the seam, not this milestone |
+
+One vault key per set of Macs, 256 bits, with HKDF subkeys per purpose — record,
+manifest, name, nonce — so no two uses share key material. The key's first four
+bytes of SHA-256 are published in the clear on every sealed file as the vault
+identifier, so a Mac holding the wrong key says exactly that instead of reporting
+corruption.
+
+**Sealing is deterministic** (#56), and this is the part that is easy to get
+wrong. The nonce is `HMAC(nonce subkey, context ‖ plaintext)` rather than random,
+so an unchanged record seals to the same bytes and the transport's "skip an
+identical rewrite" comparison still holds. With a random nonce the folder would
+be rewritten in full on every pass.
+
+**A note's record is never confused with its absence.** A record that fails to
+open is a warning and a skip, not a deletion — the same rule as #53, arrived at
+by the same reasoning.
+
+### Pairing
+
+The joining Mac publishes an X25519 public key and shows a twelve-character code
+derived from it. The Mac that holds the vault refuses to grant unless that code
+is typed back, then wraps the key to the public key it verified.
+
+```
+mac-b$ stickiesctl pair request           -> publishes a request, prints SJWG-TBRP-JCFF
+mac-a$ stickiesctl pair list              -> shows the request and its code
+mac-a$ stickiesctl pair approve mac-b --code SJWG-TBRP-JCFF
+mac-b$ stickiesctl pair complete          -> unwraps, stores, and proves it can read
+```
+
+The code is the whole of it (#58): without it, anything that can write to the
+folder substitutes its own public key and is handed the vault. Everything else in
+the exchange is arithmetic an attacker can also do.
 
 ## Known limitations
 
@@ -578,9 +642,25 @@ is what stops the two Macs from rediscovering the same conflict on every pass.
   incremental publish: a Mac with a thousand notes serializes a thousand records
   each pass, even though the transport skips writing the unchanged ones. Fine at
   the scale Stickies is used at, and the place to fix it is `localRecords`.
-- **Nothing is encrypted yet.** Anything with read access to the sync folder can
-  read every note, and could publish a `devices/` subtree of its own and have it
-  believed. Milestone 5 is what closes both.
+- **Encryption protects the transport, not the Mac.** The replica, the container
+  backups and the vault key itself are all plaintext on disk, deliberately (#54):
+  Stickies' own notes are plaintext two directories away, so encrypting the cache
+  would protect nothing. Anyone with your logged-in user account has your notes.
+- **The folder still gives away shape.** How many Macs, how many notes, how big
+  each is, and when each changed are all visible to whoever holds the folder.
+  Note identifiers, note contents, and the Macs' names are not. Padding and decoy
+  records would close the rest and are not built.
+- **A Mac that leaves keeps the key.** There is no revocation and no forward
+  secrecy: a Mac that is paired can read anything published afterwards until
+  `vault reset` and a re-pair of everything else. It also still holds every note
+  it ever synced, in Stickies, in the clear.
+- **Anything that can write to the folder can still delete from it.** Encryption
+  makes a forged record unbelievable; it does nothing about an emptied directory.
+  The notes survive because Stickies is where they live, and a peer republishes
+  on its next pass.
+- **Losing the vault key on every Mac makes the folder unreadable.** The notes
+  are unaffected — they are in Stickies — but the folder's contents are lost, and
+  `vault reset --force` plus re-pairing is the only way forward.
 - **A peer that vanishes is never forgotten.** Its `devices/<id>/` subtree stays
   in the folder and its counters stay in every vector. Harmless but untidy, and
   there is no `forget-device` command.

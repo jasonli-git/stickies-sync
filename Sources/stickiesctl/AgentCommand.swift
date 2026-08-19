@@ -53,6 +53,9 @@ struct AgentCommand: ParsableCommand {
             // failing once here, in front of whoever typed the command, beats
             // failing every thirty seconds where nobody is looking.
             try container.requireReadableContainer("install the agent")
+            // The same argument, for the same reason: an agent with no vault
+            // refuses every pass (#57).
+            let vault = try container.requireVault()
 
             let binary = try resolveExecutable()
             let plistURL = AgentCommand.plistURL(home: container.home)
@@ -90,7 +93,7 @@ struct AgentCommand: ParsableCommand {
             ])
 
             print("Installed \(plistURL.path(percentEncoded: false))")
-            print("Syncing through \(syncFolder.path(percentEncoded: false))")
+            print("Syncing through \(syncFolder.path(percentEncoded: false)), sealed with vault \(vault.keyID)")
             print("Logging to \(logURL.path(percentEncoded: false))")
             if !output.isEmpty { printError(output) }
 

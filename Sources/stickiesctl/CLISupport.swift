@@ -2,6 +2,7 @@ import ArgumentParser
 import Foundation
 import StickiesFormat
 import StickiesStore
+import StickiesSyncKit
 import SyncEngine
 
 /// Shared by every command that reads a container, so `--home` means the same
@@ -30,6 +31,48 @@ struct ContainerOptions: ParsableArguments {
 
     func openReplica() throws -> Replica {
         try Replica.open(at: replicaURL)
+    }
+
+    var vaultURL: URL {
+        ContainerLocator.applicationSupportDirectory(homeDirectory: home)
+            .appending(path: "vault.plist", directoryHint: .notDirectory)
+    }
+
+    func vaultStore() -> FileVaultStore {
+        FileVaultStore(url: vaultURL)
+    }
+
+    /// Nothing syncs without a vault, and the refusal names the way out.
+    ///
+    /// There is no unencrypted mode to fall back to (#57): a "just this once"
+    /// flag is exactly the sort of thing that stays on, and every note in the
+    /// folder would be readable by whoever holds the folder.
+    func requireVault() throws -> Vault {
+        guard let vault = try vaultStore().vault() else {
+            throw ValidationError(
+                """
+                this Mac has no vault key, so it cannot sync.
+
+                  On the first Mac:   stickiesctl vault init
+                  On every other one: stickiesctl pair request
+                """
+            )
+        }
+        return vault
+    }
+
+    func configuredSyncFolder() throws -> URL {
+        guard let folder = SyncConfiguration.load(home: home).syncFolder else {
+            throw ValidationError(
+                "no sync folder configured — run `stickiesctl sync --folder <path>` once to set one"
+            )
+        }
+        guard FileManager.default.fileExists(atPath: folder.path(percentEncoded: false)) else {
+            throw ValidationError(
+                "the configured sync folder \(folder.path(percentEncoded: false)) does not exist"
+            )
+        }
+        return folder
     }
 
     /// Reads the container and hands its notes to the replica. The one place the

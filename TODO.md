@@ -319,6 +319,71 @@ Working list for the current milestone. Longer-horizon items live in
   re-run were needed to break it. Worth distrusting any conclusion of the form
   "X is not required" that rests on a negative observation from a single machine.
 
+## Milestone 5 — End-to-end encryption ⏳
+
+Deliverable: nothing readable, and nothing believable, in the sync folder. Every
+record and manifest is sealed under a key the transport never sees; a subtree
+published by anything that lacks the key is refused rather than applied.
+
+- [x] `Vault` — the vault key, its identifier, HKDF subkeys per purpose, and
+      deterministic AEAD sealing
+- [x] `VaultStore` protocol and `FileVaultStore` — the key and this Mac's
+      identity keypair in a 0600 file; Keychain stays a later conformance
+- [x] `SyncTransport` reshaped to opaque bytes under opaque names, which is what
+      SPEC.md principle 5 says a transport is; `FolderTransport` loses its plist
+      knowledge
+- [x] `RecordName` — a validated filename, derived by HMAC from the note's
+      identifier so both Macs name the same record the same thing
+- [x] `SealedChannel` — seals, opens, names, and reports what it could not open;
+      the only path from `SyncService` to a transport
+- [x] Sealed envelope codec: `FormatVersion 2`, key identifier in the clear, AAD
+      binding a record to its note, its publisher and its name
+- [x] A v1 plaintext record is refused by name, never believed
+- [x] Pairing — X25519 identity keys, request/grant/complete over the folder,
+      with a code the user carries between the two Macs by hand
+- [x] `stickiesctl vault status|init|reset` and `pair request|list|approve|complete`
+- [x] `doctor` and the `sync --watch` banner report vault state; `agent install`
+      preflights it the way it already preflights the container
+- [x] Tests: pair-then-converge end to end, no plaintext anywhere in the folder's
+      bytes, a forged subtree, a wrong vault key, a replayed stale record, and an
+      idle pass still writing zero bytes — 216 tests
+- [x] The whole flow driven through the real CLI with two synthetic Macs,
+      including the wrong-code refusal
+- [ ] Verified across the two real Macs
+
+- Note: the code is twelve characters, not the eight first sketched. The attack
+  it defends against is grinding a keypair whose code matches the one about to be
+  read out; forty bits of that is hours of GPU time, sixty is not. Copying twelve
+  characters costs nothing extra when they are pasted.
+- Note: `DeviceManifest` lost its `PublishedAt`. It was never read, and once the
+  manifest is sealed there is no way to compare "what it says" without
+  decrypting — so a timestamp nobody reads would have rewritten the file every
+  pass and undone #49. The file's own modification time answers the same question.
+- Note: `ConvergenceTests.fileContents` was keyed by filename and filtered to
+  `.plist`, so it silently stopped covering records the moment they became `.rec`,
+  and both Macs' `manifest.plist` collided under one key. Now keyed by relative
+  path with no filter. Worth distrusting any test helper that narrows what it
+  looks at.
+- Note: the first "no plaintext in the sealed bytes" test could not have failed.
+  It searched the envelope for the note's words, and the payload rides in a
+  `<data>` element, so an entirely unsealed record would have been base64 by then
+  and matched nothing either. It now searches the decoded payload. A test that
+  cannot fail is worse than no test, because it is counted.
+- Note: a one-shot `sync` printed no warnings at all — they were only ever
+  emitted by the watching loop. Found by running the CLI after a `vault reset`:
+  the pass said `Up to date.` and `no other Macs have published yet` while a peer
+  sat in the folder that it could not open, which is precisely the silent failure
+  this milestone introduces. Warnings now print on both paths, and the summary
+  distinguishes "none have published" from "none this vault can read".
+- Note: **`sync` fails outright on a Mac that has never opened Stickies** —
+  `The folder "Stickies" doesn't exist`. Found by pairing a synthetic Mac with no
+  container. Pre-existing, not introduced here, but Milestone 5 is what makes it
+  reachable: pairing a fresh Mac is now a normal thing to do. The fix is narrow —
+  distinguish "the directory is absent" (a Mac that has never run Stickies, so an
+  empty snapshot) from "cannot list it" (a permission denial, which must keep
+  throwing, per the limitation that a TCC denial can look like an empty
+  directory). The write path would need to create the container too.
+
 ## Parked / needs user input
 
 - Done 2026-08-18: F2 split into F2 (replicated: text, formatting, attachments,

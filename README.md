@@ -13,10 +13,10 @@ do and [ARCHITECTURE.md](ARCHITECTURE.md) for how it is built.
 
 ## Features
 
-Milestones 0 through 4 are complete: notes sync between Macs over a shared
-folder, with version history, deleted-note recovery, and visible conflict copies.
-The remaining items are encryption and a menu-bar app, tracked in
-[ROADMAP.md](ROADMAP.md).
+Milestones 0 through 5 are complete: notes sync between Macs over a shared
+folder, encrypted end to end, with version history, deleted-note recovery, and
+visible conflict copies. The remaining items are optional — a menu-bar app and
+more transports — and are tracked in [ROADMAP.md](ROADMAP.md).
 
 - **Health check** *(built)* — `stickiesctl doctor` locates the Stickies
   container, reports whether it can be read, counts note packages, checks that
@@ -60,12 +60,18 @@ The remaining items are encryption and a menu-bar app, tracked in
   distinctive colour. Both Macs derive the same copy independently.
 - **Runs in the background** *(built)* — `stickiesctl agent install` sets up a
   `launchd` job that syncs at login.
+- **End-to-end encryption** *(built)* — every record and manifest in the sync
+  folder is sealed with a key shared by your Macs and by nothing else, so iCloud
+  Drive carries ciphertext it cannot read. A subtree published by anything without
+  that key is refused rather than applied. What is still visible to whoever holds
+  the folder: how many Macs, how many notes, how big each one is, and when it
+  changed.
+- **Pairing** *(built)* — `stickiesctl pair` moves the key to another Mac, checked
+  by a code you carry between the two screens. Without that check, anything able to
+  write to the folder could ask for the key and be given it.
 - **Choice of transport** — a shared directory today, which covers iCloud Drive,
   Syncthing, Dropbox, or an SMB mount without code changes; LAN peer-to-peer and
   object stores later.
-- **End-to-end encryption**, so a transport you do not control never sees
-  plaintext. **Not built yet** — today anything that can read the sync folder can
-  read every note.
 
 ## Tech stack
 
@@ -78,8 +84,12 @@ The remaining items are encryption and a menu-bar app, tracked in
 - **Local state:** SQLite (the system library, no wrapper package) at
   `~/Library/Application Support/StickiesSync/replica.sqlite3`; SHA-256 digests
   via CryptoKit; FSEvents for change notification.
-- **Tests:** swift-testing, 172 tests, including golden-file tests against a real
-  `.SavedStickiesState` and a byte-for-byte export→wipe→import round trip.
+- **Encryption:** CryptoKit — AES-GCM with HKDF-derived subkeys for sealing,
+  X25519 for pairing. The vault key lives in an owner-only file beside the
+  replica.
+- **Tests:** swift-testing, 216 tests, including golden-file tests against a real
+  `.SavedStickiesState`, a byte-for-byte export→wipe→import round trip, and two
+  simulated Macs converging over one sealed folder.
 
 ## Setup
 
@@ -111,6 +121,7 @@ StickiesSync doctor
   ✔  Legacy Stickies database       not present
   ✔  Stickies process               not running — reads and writes are both safe
   ✔  StickiesSync state directory   writable at /Users/you/Library/Application Support/StickiesSync/
+  !  vault                          none; this Mac cannot sync until `vault init` or `pair request`
 
 Result: warning
 ```
@@ -157,6 +168,7 @@ Syncing with another Mac:
 
 ```bash
 swift run stickiesctl sync --folder ~/Library/Mobile\ Documents/com~apple~CloudDocs/StickiesSync
+swift run stickiesctl vault init
 swift run stickiesctl sync --watch
 swift run stickiesctl agent install
 swift run stickiesctl agent status
@@ -166,6 +178,32 @@ Point every Mac at the same shared folder — any directory another service keep
 in step, such as iCloud Drive or a Syncthing folder. The folder is remembered
 after the first `--folder`. Each Mac writes only its own subtree, so the service
 moving the files never has to resolve anything itself.
+
+Nothing syncs until the Mac has a vault key. Create one on your first Mac with
+`vault init`; every other Mac gets it by pairing, which takes three commands and
+your being at both machines:
+
+```bash
+# on the new Mac
+swift run stickiesctl pair request              # prints a code, e.g. SJWG-TBRP-JCFF
+
+# on a Mac that is already syncing
+swift run stickiesctl pair list
+swift run stickiesctl pair approve <mac> --code SJWG-TBRP-JCFF
+
+# back on the new Mac
+swift run stickiesctl pair complete
+swift run stickiesctl vault status
+```
+
+Read the code off the new Mac's screen rather than out of the folder. That check
+is what pairing rests on: anything able to write to the shared folder can publish
+a request of its own, and `approve` refusing a code that does not match is what
+stops it being handed your key.
+
+`vault status` reports which vault this Mac holds and how many of each peer's
+records it can actually open — worth running when syncing has gone quiet, since a
+Mac with the wrong key looks exactly like a Mac with nothing to do.
 
 Every command takes `--home <path>` to read a synthetic container instead of the
 real one, which is how the test suite exercises them.
@@ -182,6 +220,9 @@ sandbox forbids reading another application's container regardless of TCC.
 
 ## Status
 
-v0.5.5 — Milestones 0 through 4 of 7 complete. Notes sync between Macs, verified
-between two real ones. Nothing on the wire is encrypted yet. Progress is in
-[ROADMAP.md](ROADMAP.md); what shipped is in [CHANGELOG.md](CHANGELOG.md).
+v0.6.0 — Milestones 0 through 5 of 7 complete, and the two that remain are
+optional. Notes sync between Macs, verified between two real ones, and the sync
+folder now holds nothing readable. The encryption has been driven end to end
+through the real CLI on one machine; across two real Macs it is still to do.
+Progress is in [ROADMAP.md](ROADMAP.md); what shipped is in
+[CHANGELOG.md](CHANGELOG.md).

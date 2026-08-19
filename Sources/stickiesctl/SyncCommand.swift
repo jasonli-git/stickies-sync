@@ -39,12 +39,24 @@ struct SyncCommand: ParsableCommand {
 
     func run() throws {
         let syncFolder = try resolveFolder()
+        let vault = try container.requireVault()
         let replica = try container.openReplica()
-        let service = SyncService.forHome(container.home, syncFolder: syncFolder, replica: replica)
+        let service = SyncService.forHome(
+            container.home,
+            syncFolder: syncFolder,
+            replica: replica,
+            vault: vault
+        )
 
         guard watch else {
             let outcome = try service.syncOnce(dryRun: dryRun)
             print(Self.render(outcome, replica: replica))
+            // Warnings were only ever printed by the watching loop, which left a
+            // one-shot pass silent about the things most worth knowing: a note it
+            // could not read, and a peer it could not open.
+            for warning in outcome.warnings {
+                printError(warning)
+            }
             return
         }
 
@@ -62,6 +74,7 @@ struct SyncCommand: ParsableCommand {
         let report = ContainerProbe.forHome(container.home).run()
         let readable = report.access == ContainerReport.Access.readable
         print("container: \(readable ? "readable" : "NOT READABLE")")
+        print("vault:     \(vault.keyID)")
         for failure in report.diagnostics() where failure.status == .failure {
             printError("\(failure.name): \(failure.detail)")
         }
@@ -141,11 +154,28 @@ struct SyncCommand: ParsableCommand {
             lines.append("Up to date.")
         }
 
-        let peers = outcome.peerNames.isEmpty
-            ? "no other Macs have published yet"
-            : "peers: \(outcome.peerNames.joined(separator: ", "))"
+        let peers =
+            if !outcome.peerNames.isEmpty {
+                "peers: \(outcome.peerNames.joined(separator: ", "))"
+            } else if outcome.unopenedPeers.isEmpty {
+                "no other Macs have published yet"
+            } else {
+                // "None have published" and "none I can read" are different
+                // facts and must not share a sentence.
+                "no other Macs this vault can read"
+            }
         lines.append("")
         lines.append("\(outcome.publishedRecords) record(s) published as \(replica.deviceName); \(peers).")
+
+        // Said here rather than left to the warnings, because this is the one
+        // state that otherwise reads as "nothing to do": a Mac publishing under
+        // a key this one does not hold is invisible except as an absence.
+        if !outcome.unopenedPeers.isEmpty {
+            lines.append(
+                "\(outcome.unopenedPeers.count) Mac(s) published something this vault cannot open — "
+                    + "nothing from them was applied. `stickiesctl vault status` says which."
+            )
+        }
 
         return lines.joined(separator: "\n")
     }

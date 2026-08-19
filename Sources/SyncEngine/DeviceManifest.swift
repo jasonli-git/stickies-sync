@@ -21,13 +21,20 @@ public struct DeviceManifest: Hashable, Sendable {
 
     public var device: DeviceID
     public var deviceName: String
-    public var publishedAt: Date
     public var entries: [Entry]
 
-    public init(device: DeviceID, deviceName: String, publishedAt: Date, entries: [Entry]) {
+    /// Carries no publication time, deliberately.
+    ///
+    /// It did until 0.6.0, and it was never read for anything — but it changed
+    /// on every pass, which meant the manifest's bytes changed on every pass.
+    /// Once the manifest is sealed there is no way to compare "what it says"
+    /// without decrypting, so a timestamp nobody reads would have re-uploaded the
+    /// file every thirty seconds and woken every other Mac for it, undoing #49.
+    /// The file's own modification time answers "when did this Mac last publish"
+    /// more honestly anyway.
+    public init(device: DeviceID, deviceName: String, entries: [Entry]) {
         self.device = device
         self.deviceName = deviceName
-        self.publishedAt = publishedAt
         self.entries = entries
     }
 
@@ -37,13 +44,13 @@ public struct DeviceManifest: Hashable, Sendable {
 }
 
 extension DeviceManifest {
-    static let currentFormatVersion = 1
+    /// 2 since the publication time was dropped.
+    static let currentFormatVersion = 2
 
     enum Key {
         static let formatVersion = "FormatVersion"
         static let device = "Device"
         static let deviceName = "DeviceName"
-        static let publishedAt = "PublishedAt"
         static let entries = "Entries"
         static let uuid = "UUID"
         static let version = "Version"
@@ -55,7 +62,6 @@ extension DeviceManifest {
             Key.formatVersion: .integer(Self.currentFormatVersion),
             Key.device: .string(device.rawValue),
             Key.deviceName: .string(deviceName),
-            Key.publishedAt: .date(publishedAt),
             // Sorted so a manifest republished with no changes is byte-identical
             // and the underlying file syncer has nothing to carry.
             Key.entries: .array(
@@ -90,8 +96,6 @@ extension DeviceManifest {
         self.init(
             device: DeviceID(rawValue: device),
             deviceName: entry[Key.deviceName]?.stringValue ?? device,
-            publishedAt: entry[Key.publishedAt].flatMap { if case .date(let d) = $0 { d } else { nil } }
-                ?? Date(timeIntervalSince1970: 0),
             entries: try (entry[Key.entries]?.arrayValue ?? []).map { value in
                 guard let row = value.dictionaryValue,
                       let raw = row[Key.uuid]?.stringValue,

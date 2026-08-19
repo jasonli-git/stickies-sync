@@ -407,11 +407,10 @@ public final class Replica {
         try localRecords().first { $0.id == id }
     }
 
-    public func manifest(publishedAt: Date? = nil) throws -> DeviceManifest {
+    public func manifest() throws -> DeviceManifest {
         DeviceManifest(
             device: deviceID,
             deviceName: deviceName,
-            publishedAt: publishedAt ?? now(),
             entries: try knownNotes().map {
                 DeviceManifest.Entry(id: $0.id, version: $0.version, isDeletion: $0.isDeleted)
             }

@@ -196,7 +196,6 @@ struct MergeDecisionTests {
         let manifest = DeviceManifest(
             device: macA,
             deviceName: "mac-a",
-            publishedAt: epoch,
             entries: [
                 .init(id: try stickyID("18"), version: VersionVector(counters: [macA: 1]), isDeletion: true),
                 .init(id: try stickyID("17"), version: VersionVector(counters: [macA: 2]), isDeletion: false),

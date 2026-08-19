@@ -23,10 +23,18 @@ struct DoctorCommand: ParsableCommand {
         let report = ContainerProbe.forHome(container.home).run()
         let diagnostics = report.diagnostics()
 
+        // Named here as well as in `vault status`, because doctor is what
+        // someone runs when syncing has stopped and they do not yet know why —
+        // and "no vault" is one of the two ways it stops silently, the other
+        // being an unreadable container. It is not folded into `ContainerReport`:
+        // that type answers questions about the *container*, and a key is not
+        // one of them.
+        let vault = (try? container.vaultStore().vault())?.keyID
+
         if json {
-            print(try DoctorPayload(report: report, diagnostics: diagnostics).encodedJSON())
+            print(try DoctorPayload(report: report, diagnostics: diagnostics, vault: vault).encodedJSON())
         } else {
-            print(renderText(report: report, diagnostics: diagnostics))
+            print(renderText(report: report, diagnostics: diagnostics, vault: vault))
         }
 
         if report.overallStatus == .failure {
@@ -37,13 +45,21 @@ struct DoctorCommand: ParsableCommand {
 
 // MARK: - Text rendering
 
-private func renderText(report: ContainerReport, diagnostics: [Diagnostic]) -> String {
+private func renderText(report: ContainerReport, diagnostics: [Diagnostic], vault: String?) -> String {
     let width = diagnostics.map(\.name.count).max() ?? 0
     let rows = diagnostics.map { diagnostic in
         let name = diagnostic.name.padding(toLength: width, withPad: " ", startingAt: 0)
         return "  \(glyph(for: diagnostic.status))  \(name)   \(diagnostic.detail)"
     }
-    return (["StickiesSync doctor", ""] + rows + ["", "Result: \(report.overallStatus.rawValue)"])
+
+    let vaultLine =
+        "  \(vault == nil ? "!" : "✔")  "
+        + "vault".padding(toLength: width, withPad: " ", startingAt: 0)
+        + "   "
+        + (vault.map { "\($0) — records are sealed with it" }
+            ?? "none; this Mac cannot sync until `vault init` or `pair request`")
+
+    return (["StickiesSync doctor", ""] + rows + [vaultLine, "", "Result: \(report.overallStatus.rawValue)"])
         .joined(separator: "\n")
 }
 
@@ -82,9 +98,11 @@ private struct DoctorPayload: Encodable {
     let stateDirectoryWritable: Bool
     let stickiesRunning: Bool
     let stickiesFrontmost: Bool
+    /// The vault's identifier, or null on a Mac that has none and so cannot sync.
+    let vault: String?
     let diagnostics: [Entry]
 
-    init(report: ContainerReport, diagnostics: [Diagnostic]) {
+    init(report: ContainerReport, diagnostics: [Diagnostic], vault: String?) {
         let (access, accessDetail) = Self.describe(report.access)
         let (savedState, savedStateCount, savedStateDetail) = Self.describe(report.savedState)
 
@@ -103,6 +121,7 @@ private struct DoctorPayload: Encodable {
         self.stateDirectoryWritable = report.applicationSupportWritable
         self.stickiesRunning = report.runState.isRunning
         self.stickiesFrontmost = report.runState == .running(frontmost: true)
+        self.vault = vault
         self.diagnostics = diagnostics.map {
             Entry(name: $0.name, status: $0.status.rawValue, detail: $0.detail)
         }

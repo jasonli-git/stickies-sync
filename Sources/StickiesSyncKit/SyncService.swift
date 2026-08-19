@@ -10,6 +10,12 @@ public struct SyncOutcome: Sendable {
     public var removed: [StickyID] = []
     public var conflicts: [ConflictReport] = []
     public var peerNames: [String] = []
+    /// Macs that published something this vault could not open. Reported
+    /// separately from `warnings` because "there are no peers" and "there is a
+    /// peer I cannot read" must never render the same way — the second is the
+    /// silent failure encryption introduces, and it looks exactly like having
+    /// nothing to do.
+    public var unopenedPeers: [DeviceID] = []
     public var publishedRecords = 0
     public var warnings: [String] = []
     public var wasDryRun = false
@@ -39,7 +45,7 @@ public struct ConflictReport: Hashable, Sendable {
 public struct SyncService {
     private let home: URL
     private let replica: Replica
-    private let transport: any SyncTransport
+    private let channel: SealedChannel
     private let reader: StickiesReader
     private let coordinator: ApplyCoordinator
     private let now: () -> Date
@@ -47,29 +53,36 @@ public struct SyncService {
     public init(
         home: URL,
         replica: Replica,
-        transport: any SyncTransport,
+        channel: SealedChannel,
         reader: StickiesReader,
         coordinator: ApplyCoordinator,
         now: @escaping () -> Date = Date.init
     ) {
         self.home = home
         self.replica = replica
-        self.transport = transport
+        self.channel = channel
         self.reader = reader
         self.coordinator = coordinator
         self.now = now
     }
 
+    /// A vault is required rather than optional: there is no unencrypted mode to
+    /// fall into (#57).
     public static func forHome(
         _ home: URL,
         syncFolder: URL,
         replica: Replica,
+        vault: Vault,
         processControl: (any StickiesProcessControlling)? = nil
     ) -> SyncService {
         SyncService(
             home: home,
             replica: replica,
-            transport: FolderTransport(root: syncFolder, device: replica.deviceID),
+            channel: SealedChannel(
+                transport: FolderTransport(root: syncFolder, device: replica.deviceID),
+                vault: vault,
+                device: replica.deviceID
+            ),
             reader: StickiesReader.forHome(home),
             coordinator: processControl.map {
                 ApplyCoordinator.forHome(home, processControl: $0)
@@ -130,7 +143,20 @@ public struct SyncService {
             uniqueKeysWithValues: try replica.localRecords().map { ($0.id, $0) }
         )
 
-        for manifest in try transport.peerManifests(excluding: replica.deviceID) {
+        let reading = try channel.peerManifests()
+        for unopened in reading.unopened {
+            // Nothing this Mac's vault can read, so it is not a peer as far as
+            // this pass is concerned — it could be a Mac that has not been paired
+            // yet, one still publishing the plaintext records that predate
+            // encryption, or something that has no business writing here at all.
+            // It cannot even name itself: the name is inside the ciphertext.
+            outcome.unopenedPeers.append(unopened.device)
+            outcome.warnings.append(
+                "ignoring what \(unopened.device) published — \(unopened.reason)"
+            )
+        }
+
+        for manifest in reading.manifests {
             outcome.peerNames.append(manifest.deviceName)
 
             for entry in manifest.entries {
@@ -144,11 +170,24 @@ public struct SyncService {
                     continue
                 }
 
-                guard let remote = try transport.record(entry.id, from: manifest.device) else {
+                let remote: SyncRecord
+                switch try channel.record(entry.id, from: manifest.device) {
+                case .arrived(let record):
+                    remote = record
+                case .notLandedYet:
                     // Advertised but not landed yet — normal while the folder is
                     // still copying. The next pass will find it.
                     outcome.warnings.append(
                         "\(manifest.deviceName) lists \(entry.id) but its record has not arrived yet"
+                    )
+                    continue
+                case .unreadable(let reason):
+                    // The manifest opened but this record did not: it was
+                    // altered, truncated, or moved from somewhere else. Skipped,
+                    // never guessed at, and above all not treated as an absence —
+                    // that is the mistake #53 was about.
+                    outcome.warnings.append(
+                        "\(manifest.deviceName) published \(entry.id) unreadably — \(reason)"
                     )
                     continue
                 }
@@ -257,7 +296,7 @@ public struct SyncService {
 
     private func publish(_ outcome: inout SyncOutcome) throws {
         let records = try replica.localRecords()
-        try transport.publish(manifest: try replica.manifest(publishedAt: now()), records: records)
+        try channel.publish(manifest: try replica.manifest(), records: records)
         outcome.publishedRecords = records.count
     }
 }

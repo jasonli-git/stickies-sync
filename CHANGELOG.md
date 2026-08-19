@@ -3,6 +3,67 @@
 All notable changes to StickiesSync. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.6.0] — 2026-08-19
+
+Milestone 5. Nothing in the sync folder is readable any more, and nothing
+published without the vault key is believed.
+
+### Added
+
+- **Every record and manifest is sealed** with AES-GCM under one key shared by
+  your Macs. The folder gives up note contents, note identifiers, and your Macs'
+  names no longer; what remains visible is how many Macs there are, how many notes,
+  how big each is, and when each changed.
+- **A subtree published without the key is refused by name and skipped.** Before
+  this, anything able to write to the folder could invent a `devices/` subtree and
+  have its notes applied straight into Stickies. A peer still publishing the
+  unencrypted records that predate this release is refused the same way rather
+  than believed for compatibility's sake.
+- **`stickiesctl vault status|init|reset`.** `status` reports the vault, the key
+  file's permissions, and — the part that matters — how many of each peer's
+  records actually open, because a Mac holding the wrong key otherwise looks
+  exactly like a Mac with nothing to do.
+- **`stickiesctl pair request|list|approve|complete`.** Pairing runs over the sync
+  folder and is verified by a twelve-character code carried between the two Macs by
+  hand. `approve` refuses unless the code matches the request it found: anything
+  with write access to the folder can publish a request of its own, so the code is
+  what establishes who is asking.
+- `doctor` reports the vault, and `agent install` refuses to install without one —
+  the same argument as the container preflight in 0.5.4.
+
+### Changed
+
+- **`SyncTransport` now carries opaque bytes under opaque names** rather than
+  records and manifests, which is what SPEC.md principle 5 already said a transport
+  is. Encryption sits above it in `SealedChannel`, so Milestone 7's transports get
+  it without reimplementing it, and no code path reaches a transport without a key.
+- **Sealing is deterministic**, so an unchanged note still re-publishes to
+  byte-identical bytes and 0.5.2's "an idle pass writes nothing" survives
+  encryption. A random nonce would have rewritten the whole folder every pass.
+- `DeviceManifest` no longer carries a publication time. Nothing read it, and
+  sealed it would have changed the file's bytes on every pass for no purpose; the
+  file's modification time answers the same question.
+
+### Fixed
+
+- **A one-shot `stickiesctl sync` printed no warnings.** They were only ever
+  emitted by the watching loop, so a single pass stayed silent about the two
+  things most worth saying: a note it could not read, and a peer whose records it
+  could not open. It also reported "no other Macs have published yet" when the
+  truth was "none this vault can read" — the wrong-key state reading as an idle
+  folder is exactly the failure encryption introduces.
+
+### Migration
+
+Both Macs need the key before either syncs again, and there is no unencrypted
+mode to fall back to:
+
+1. Update the first Mac, then `stickiesctl vault init`.
+2. Update the second, then `stickiesctl pair request` and follow what it prints.
+
+Until step 2 finishes, each Mac refuses the other's records and says so. The old
+plaintext records are deleted from the folder by the first sealed publish.
+
 ## [0.5.5] — 2026-08-19
 
 ### Fixed

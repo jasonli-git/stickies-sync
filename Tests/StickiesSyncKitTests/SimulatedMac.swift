@@ -51,10 +51,18 @@ final class SimulatedMac {
     let clock: TestClock
     let replica: Replica
     let service: SyncService
+    let transport: FolderTransport
+    let vault: Vault
 
     private let fileManager = FileManager.default
 
-    init(name: String, root: URL, syncFolder: URL, clock: TestClock = TestClock()) throws {
+    init(
+        name: String,
+        root: URL,
+        syncFolder: URL,
+        vault: Vault,
+        clock: TestClock = TestClock()
+    ) throws {
         self.name = name
         self.home = root.appending(path: name, directoryHint: .isDirectory)
         self.clock = clock
@@ -70,18 +78,31 @@ final class SimulatedMac {
             deviceName: name,
             now: clock.now
         )
+        self.transport = FolderTransport(root: syncFolder, device: replica.deviceID)
+        self.vault = vault
         self.service = SyncService(
             home: home,
             replica: replica,
-            transport: FolderTransport(root: syncFolder, device: replica.deviceID),
+            channel: SealedChannel(transport: transport, vault: vault, device: replica.deviceID),
             reader: StickiesReader.forHome(home),
             coordinator: ApplyCoordinator.forHome(home, processControl: ClosedStickies()),
             now: clock.now
         )
     }
 
-    /// Two Macs and the folder between them.
+    /// Two Macs and the folder between them, both holding the same vault —
+    /// which is what a completed pairing leaves behind. `Pairing` itself is
+    /// exercised separately, in `PairingTests`.
     static func pair(
+        _ body: (SimulatedMac, SimulatedMac, URL) throws -> Void
+    ) throws {
+        try pair(vaults: { let shared = Vault.generate(); return (shared, shared) }, body)
+    }
+
+    /// The same, with the two Macs' vaults chosen by the caller — for the case
+    /// where they do *not* match.
+    static func pair(
+        vaults: () -> (Vault, Vault),
         _ body: (SimulatedMac, SimulatedMac, URL) throws -> Void
     ) throws {
         let root = URL(filePath: NSTemporaryDirectory(), directoryHint: .isDirectory)
@@ -92,9 +113,10 @@ final class SimulatedMac {
         let folder = root.appending(path: "SharedFolder", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
 
+        let (vaultA, vaultB) = vaults()
         try body(
-            try SimulatedMac(name: "mac-a", root: root, syncFolder: folder),
-            try SimulatedMac(name: "mac-b", root: root, syncFolder: folder),
+            try SimulatedMac(name: "mac-a", root: root, syncFolder: folder, vault: vaultA),
+            try SimulatedMac(name: "mac-b", root: root, syncFolder: folder, vault: vaultB),
             folder
         )
     }

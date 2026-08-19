@@ -265,6 +265,24 @@ Working list for the current milestone. Longer-horizon items live in
 - Note: a peer that goes away is never forgotten — its subtree stays in the
   folder and its counters stay in every vector. Harmless, untidy, and there is
   no `forget-device` command.
+- Note: **a note that cannot be read is published as a deletion.** Observed on the
+  mini's live agent, 2026-08-19, in `~/Library/Logs/StickiesSync.log`: one pass
+  reported `- 53975D6B… deleted (here)` and published the tombstone, and the
+  warning printed with it names the cause — `NSPOSIXErrorDomain Code=4`,
+  "Interrupted system call", a transient EINTR reading the package. The next pass
+  read it fine and reported `^ … reappeared`, so the note blinked out and back on
+  the peer. `StickiesReader` keeps unreadable notes out of `snapshot.notes`,
+  `Replica.reconcile` treats any note missing from the snapshot as deleted, and
+  `SyncService` publishes that. One flaky read costs one note; the container-access
+  lapse seen on the laptop fails *every* read at once, which would tombstone the
+  whole container on the peer. Recoverable through history (F8), but it is SPEC
+  principle 1 failing in the field. Fix: `reconcile` has to be told which
+  identifiers exist-but-were-not-read and must not tombstone them — narrow, in the
+  spirit of #16 and #24, so one bad note still costs only that note.
+- Note: nothing locks the container between processes. A hand-run `stickiesctl`
+  command and the installed agent can both be inside `ApplyCoordinator` at once,
+  each having quit Stickies and each writing. Not observed; avoided by hand here
+  by stopping the agent before deleting the test notes, which is not a guarantee.
 
 - [x] **The agent survives a reboot** — verified on the laptop 2026-08-18: cold
       `launchd` start at login, new pid, no granted ancestor, `container:

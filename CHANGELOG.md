@@ -3,6 +3,37 @@
 All notable changes to StickiesSync. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.5.4] — 2026-08-18
+
+### Fixed
+
+- **The Full Disk Access claim was wrong, and is withdrawn rather than replaced
+  with another guess.** 0.5.3 said reading Stickies' container needs no TCC grant,
+  inferred from a process that was denied `TCC.db` and `~/Library/Safari` yet read
+  the container anyway. A second Mac disproved it: container *and* iCloud-folder
+  reads failed with `Operation not permitted` — Unix permissions and the sandbox
+  both ruled out — and recovered only when Full Disk Access was granted.
+  Re-measuring with the sandbox disabled shows the pattern is not uniform either:
+  Stickies, Calculator and Preview containers read fine while **Notes**, Safari,
+  Mail and Messages are denied in the same run, so Apple gates specific
+  applications rather than containers as a class. No rule this project understands
+  explains both Macs, so the code and the docs now say "grant Full Disk Access"
+  instead of asserting an answer.
+- `doctor`'s permission-denied message no longer calls the denial "unexpected,
+  since the container needs no special permission" — which sent the reader looking
+  anywhere but at the grant. It now names the remedy and where to find it.
+
+### Added
+
+- `agent install` refuses to install when the container is unreadable, before it
+  writes any persistent configuration. An agent that cannot read the container
+  still launches, still logs and syncs nothing, failing every thirty seconds into a
+  file nobody opens; failing once in front of whoever typed the command is worth
+  more than any amount of logging.
+- `sync --watch` states container readability in its opening banner, because after
+  a reboot the log's first lines are the only evidence available for the one
+  question a `launchd` job cannot answer in advance.
+
 ## [0.5.3] — 2026-08-18
 
 ### Changed

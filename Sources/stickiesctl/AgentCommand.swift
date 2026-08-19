@@ -48,6 +48,12 @@ struct AgentCommand: ParsableCommand {
                 )
             }
 
+            // Checked before anything persistent is written. An agent that cannot
+            // read the container still starts, still logs, and syncs nothing —
+            // failing once here, in front of whoever typed the command, beats
+            // failing every thirty seconds where nobody is looking.
+            try container.requireReadableContainer("install the agent")
+
             let binary = try resolveExecutable()
             let plistURL = AgentCommand.plistURL(home: container.home)
             let logURL = AgentCommand.logURL(home: container.home)
@@ -87,6 +93,12 @@ struct AgentCommand: ParsableCommand {
             print("Syncing through \(syncFolder.path(percentEncoded: false))")
             print("Logging to \(logURL.path(percentEncoded: false))")
             if !output.isEmpty { printError(output) }
+
+            printError(
+                "note: the agent runs as a launchd job, which inherits no grant from a terminal. "
+                    + "If its log shows permission errors after a reboot, add "
+                    + "\(binary.path(percentEncoded: false)) to Full Disk Access."
+            )
 
             if binary.path(percentEncoded: false).contains("/.build/") {
                 printError(

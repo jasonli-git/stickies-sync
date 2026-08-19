@@ -266,6 +266,19 @@ Working list for the current milestone. Longer-horizon items live in
   folder and its counters stay in every vector. Harmless, untidy, and there is
   no `forget-device` command.
 
+- [ ] **Confirm the agent survives a reboot.** Installing it inside a session that
+      already holds Full Disk Access proves nothing: `launchd` starting the job at
+      login, with no granted process anywhere in the chain, is the case that could
+      fail. Reinstall, reboot, read the first lines of
+      `~/Library/Logs/StickiesSync.log` — the banner now states container
+      readability there precisely so this is a one-glance check. Milestone 4 is not
+      closed until one Mac has done it.
+- Note: my own "no Full Disk Access needed" measurement was the weakest link in
+  the project and stood for three milestones. It inferred an absent grant from two
+  denials without checking what caused them; two Macs and a sandbox-disabled
+  re-run were needed to break it. Worth distrusting any conclusion of the form
+  "X is not required" that rests on a negative observation from a single machine.
+
 ## Parked / needs user input
 
 - Done 2026-08-18: F2 split into F2 (replicated: text, formatting, attachments,

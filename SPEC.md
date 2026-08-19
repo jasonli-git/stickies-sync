@@ -70,11 +70,11 @@ experience is that Stickies simply matches across their Macs.
   user ever changes those.
 - **Deleted notes are recoverable** from the command line for as long as history
   is retained.
-- **No permission prompt to get through.** Reading Stickies' container needs no
-  Full Disk Access grant and no TCC approval of any kind — measured on
-  macOS 26.6.1 against a process denied both the TCC database and `~/Library/Safari`.
-  Should a future macOS start gating application containers, the utility says so
-  plainly rather than reporting an empty container.
+- **One permission to grant, once.** Full Disk Access, for whatever runs the
+  utility. Whether macOS strictly requires it to read Stickies' container has been
+  observed both ways on different Macs, so the utility neither assumes it is
+  needed nor assumes it is not: it checks before installing anything persistent,
+  and reports a denial with the remedy rather than reporting an empty container.
 
 The v1 interface is `stickiesctl`, a command-line tool, plus the background
 agent. A menu-bar status item is desirable but not required for the product to
@@ -110,10 +110,9 @@ Macs.
   nothing to sync to.
 - **Notes.app, Reminders, or any other note store.** Stickies only.
 - **Mac App Store distribution.** The App Sandbox forbids reading another
-  application's container, whatever TCC does or does not require, and no
-  entitlement the App Store accepts lifts that. This closes the door permanently,
-  not just for v1. (It is the sandbox that closes it, not Full Disk Access —
-  reading the container turns out to need no TCC grant at all.)
+  application's container, and no entitlement the App Store accepts lifts that.
+  This closes the door permanently, not just for v1, and it does so independently
+  of whatever TCC requires.
 - **Signing, notarization, an auto-updater, a crash reporter, or an onboarding
   wizard.** v1 is built from source by its user.
 - **Real-time collaborative editing.** No character-level merge of rich text.

@@ -54,7 +54,18 @@ struct SyncCommand: ParsableCommand {
 
         print("Syncing \(ContainerLocator.stickiesDirectory(homeDirectory: container.home).root.path(percentEncoded: false))")
         print("through \(syncFolder.path(percentEncoded: false))")
-        print("as \(replica.deviceName) (\(replica.deviceID)). Ctrl-C to stop.\n")
+        print("as \(replica.deviceName) (\(replica.deviceID)). Ctrl-C to stop.")
+
+        // Stated in the banner because this is the first thing anyone reads in
+        // the log after a reboot, and it is the question a launchd job cannot
+        // answer in advance: did it inherit enough access to do anything?
+        let report = ContainerProbe.forHome(container.home).run()
+        let readable = report.access == ContainerReport.Access.readable
+        print("container: \(readable ? "readable" : "NOT READABLE")")
+        for failure in report.diagnostics() where failure.status == .failure {
+            printError("\(failure.name): \(failure.detail)")
+        }
+        print("")
 
         let runner = SyncRunner(service: service, replica: replica)
         runner.run(label: "initial pass")

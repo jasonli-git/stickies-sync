@@ -170,14 +170,18 @@ moving the files never has to resolve anything itself.
 Every command takes `--home <path>` to read a synthetic container instead of the
 real one, which is how the test suite exercises them.
 
-**No special permission is needed.** Reading Stickies' container was measured to
-require no Full Disk Access grant on macOS 26.6.1 — see decision #19 in
-[ARCHITECTURE.md](ARCHITECTURE.md). StickiesSync still cannot be sandboxed or
-shipped through the Mac App Store, because the sandbox forbids reading another
-application's container regardless.
+**Grant Full Disk Access to whatever runs `stickiesctl`** — the terminal you use
+it from, and the binary itself if you install the background agent. Whether macOS
+strictly requires it to read Stickies' container turns out to vary between Macs
+(see decision #51 in [ARCHITECTURE.md](ARCHITECTURE.md)); granting it removes the
+question. `doctor` tells you if it is missing, and `agent install` refuses rather
+than installing a daemon that would read nothing.
+
+StickiesSync cannot be sandboxed or shipped through the Mac App Store, because the
+sandbox forbids reading another application's container regardless of TCC.
 
 ## Status
 
-v0.5.2 — Milestones 0 through 4 of 7 complete. Notes sync between Macs, verified
+v0.5.4 — Milestones 0 through 4 of 7 complete. Notes sync between Macs, verified
 between two real ones. Nothing on the wire is encrypted yet. Progress is in
 [ROADMAP.md](ROADMAP.md); what shipped is in [CHANGELOG.md](CHANGELOG.md).

@@ -71,15 +71,19 @@ extension ContainerReport {
                 detail: "\(directory.path(percentEncoded: false)) exists but is not a directory"
             )
         case .permissionDenied(let message):
-            // Measured on macOS 26.6.1: reading another application's container
-            // needs no TCC grant at all, so a denial here is unexpected rather
-            // than routine. Full Disk Access is the remedy to try if a newer
-            // macOS has started gating app containers.
+            // Whether the container needs a TCC grant varies between Macs in a
+            // way this project does not understand: one Mac reads it with no
+            // Full Disk Access at all while another was denied until FDA was
+            // granted. So this says what to do rather than claiming the denial is
+            // surprising — an earlier version called it "unexpected, since the
+            // container needs no special permission", which sent the reader
+            // looking anywhere but at the grant.
             return Diagnostic(
                 name: name,
                 status: .failure,
-                detail: "permission denied (\(message)) — unexpected, since the container needs no "
-                    + "special permission; try granting Full Disk Access to whatever runs stickiesctl"
+                detail: "permission denied (\(message)) — grant Full Disk Access to whatever runs "
+                    + "stickiesctl (the binary itself under launchd, or the terminal or app "
+                    + "launching it), in System Settings ▸ Privacy & Security ▸ Full Disk Access"
             )
         case .failed(let message):
             return Diagnostic(name: name, status: .failure, detail: "unreadable: \(message)")

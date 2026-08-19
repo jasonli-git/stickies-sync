@@ -51,6 +51,28 @@ extension NoteChange {
     }
 }
 
+extension ContainerOptions {
+    /// Refuses to proceed when the container cannot be read.
+    ///
+    /// Exists because a sync daemon that reads nothing is worse than no daemon:
+    /// it fails every thirty seconds into a log file nobody opens. Whether the
+    /// container needs a Full Disk Access grant differs between Macs in a way
+    /// this project cannot yet explain, so the check is made at the moment a
+    /// person is watching rather than assumed away.
+    func requireReadableContainer(_ action: String) throws {
+        let report = ContainerProbe.forHome(home).run()
+        guard report.access != .readable else { return }
+
+        let failures = report.diagnostics()
+            .filter { $0.status == .failure }
+            .map { "  \($0.name): \($0.detail)" }
+        throw ValidationError(
+            "cannot \(action): this Mac's Stickies container is not readable.\n"
+                + failures.joined(separator: "\n")
+        )
+    }
+}
+
 func printError(_ message: String) {
     FileHandle.standardError.write(Data((message + "\n").utf8))
 }

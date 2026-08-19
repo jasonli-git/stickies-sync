@@ -26,9 +26,11 @@ objects between a person's own Macs.
   middle two meet.
 - **External dependencies:** exactly one, `swift-argument-parser`. Everything
   else is Foundation, AppKit, CoreServices, SQLite3 and CryptoKit.
-- **Permissions:** none. Reading another application's container was measured to
-  need no TCC grant on macOS 26.6.1 (#19). The Mac App Store is still closed off,
-  but by the sandbox rather than by TCC.
+- **Permissions:** grant Full Disk Access to whatever runs `stickiesctl` (#51).
+  Whether the container strictly requires it varies between Macs in a way this
+  project cannot yet explain — one reads it with no grant at all, another was
+  denied until the grant was added. The Mac App Store is closed off regardless,
+  by the sandbox rather than by TCC.
 
 Future shapes stay cheap because the pieces that would change are already named
 as seams. A LAN, object-store, or self-hosted backend replaces one conformance
@@ -90,6 +92,8 @@ keeps an updated Mac talking to one that has not updated yet.
 | 48 | A geometry-only change does not stamp the note's `updated_at` | That timestamp is the last-writer-wins tiebreak, so advancing it would let dragging a window decide a future conflict over the note's *text* — a change that does not travel silently influencing one that does. It is also what makes a republished record differ from the last one, so leaving it alone is what makes a move cost zero bytes on the wire |
 | 49 | The manifest is rewritten only when its entries change, never merely because it was republished | A manifest carries a publication time, so serializing it afresh each pass rewrites the file each pass, and a syncing service re-uploads anything whose mtime moved. An agent polling every thirty seconds would push thousands of identical manifests a day and wake every other device for each. Measured on the real iCloud folder: three idle passes now write nothing at all |
 | 50 | Authorship transferred by pre-0.5.1 geometry publishes is left as it stands, not unwound | Every note in the shared folder now names the laptop as origin, including three the desktop Mac wrote — because before geometry was made machine-local, those window-only publishes were *genuine authored versions*, so the attribution is accurate to what happened. It is also harmless: `origin`'s two load-bearing uses, the conflict tiebreak and the conflict-copy identifier, need only to be deterministic and identical on both Macs, which they are. This does not contradict the relay rule in migration 2 — relaying preserves origin, and a Mac publishing its own new version is not relaying. Rewriting history to say otherwise would be inventing a past |
+| 51 | Assume nothing about whether reading the container needs a TCC grant. **Supersedes #19.** Grant Full Disk Access to whatever runs `stickiesctl`, and make a denial say so | #19 claimed no permission is needed, inferred from a process that was denied `TCC.db` and `~/Library/Safari` yet read the container. The inference does not hold: a second Mac lost container *and* iCloud-folder access mid-session with `Operation not permitted` — Unix permissions and the sandbox both ruled out — and regained it only when Full Disk Access was granted. Re-measuring on this Mac with the sandbox disabled shows the pattern is not uniform either: Stickies, Calculator and Preview containers read fine while **Notes**, Safari, Mail and Messages are denied in the same run, so Apple gates *specific* applications rather than containers as a class. The two Macs cannot both be explained by any rule this project understands, so the code stops asserting one: `doctor` now names the grant as the remedy instead of calling a denial "unexpected", and `agent install` refuses to install against an unreadable container |
+| 52 | `agent install` preflights the container, and `sync --watch` states readability in its opening banner | An agent that cannot read the container still launches, still logs, and syncs nothing — failing every thirty seconds into a file nobody opens. Failing once, loudly, in front of whoever typed the command is worth more than any amount of logging. The banner exists because after a reboot the log's first lines are the only evidence available, and "did this job inherit enough access to do anything" is precisely what a `launchd` job cannot answer in advance |
 | 36 | A tombstone row carries no content of its own | The version recorded before the deletion already holds it, and duplicating it would double the storage for every deleted note. `newestRecoverableVersion` skips deletions to find it |
 
 ## Module Layout
@@ -513,6 +517,15 @@ is what stops the two Macs from rediscovering the same conflict on every pass.
   normally surface as `NSFileReadNoPermission`, which the probe reports
   precisely. If a future macOS gates app containers and returns an empty listing
   instead, doctor would report "no notes" on a Mac that has plenty.
+- **Whether the container needs a Full Disk Access grant is unresolved** (#51).
+  Two Macs disagree, and the difference is not explained. Grant it and the
+  question goes away; the code no longer claims either answer.
+- **Nobody has yet confirmed the agent survives a reboot.** Installing it inside
+  a session that already holds Full Disk Access proves nothing about the case
+  that matters: `launchd` starting the job at login with no granted process
+  anywhere in the chain. The failure mode if it does bite is a permission error
+  every thirty seconds into the log, which is why the banner states readability in
+  its opening lines.
 - **Doctor counts state entries without reading them.** It checks only that
   `.SavedStickiesState` parses as an array; the entries themselves are parsed by
   `StickiesReader`, so `list` and `export` will report a malformed entry that

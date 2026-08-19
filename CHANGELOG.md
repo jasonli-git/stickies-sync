@@ -3,6 +3,23 @@
 All notable changes to StickiesSync. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.5.3] — 2026-08-18
+
+### Changed
+
+- **SPEC.md corrected on two points, at the user's request.** F2 is split: F2 now
+  covers what is replicated (text, formatting, attachments, colour, translucency,
+  float-on-top) and a new F2a covers what is captured but belongs to the Mac it
+  was set on (frame, expanded state, multi-screen frames, z-order). The vision
+  paragraph and a new user-experience bullet say the same. Existing requirement
+  numbers are undisturbed.
+- Both Full Disk Access claims in SPEC.md are corrected. Reading Stickies'
+  container needs no TCC grant of any kind, measured on macOS 26.6.1; the Mac App
+  Store remains closed off, but by the App Sandbox, which forbids reading another
+  application's container whatever TCC requires. ARCHITECTURE #7 keeps its
+  original rationale as the record of what was believed at the time, marked as
+  superseded in part by #19.
+
 ## [0.5.2] — 2026-08-18
 
 ### Fixed

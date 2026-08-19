@@ -70,8 +70,11 @@ experience is that Stickies simply matches across their Macs.
   user ever changes those.
 - **Deleted notes are recoverable** from the command line for as long as history
   is retained.
-- **Nothing happens without permission.** The utility requires Full Disk Access
-  to read another application's container and says so plainly when it lacks it.
+- **No permission prompt to get through.** Reading Stickies' container needs no
+  Full Disk Access grant and no TCC approval of any kind — measured on
+  macOS 26.6.1 against a process denied both the TCC database and `~/Library/Safari`.
+  Should a future macOS start gating application containers, the utility says so
+  plainly rather than reporting an empty container.
 
 The v1 interface is `stickiesctl`, a command-line tool, plus the background
 agent. A menu-bar status item is desirable but not required for the product to
@@ -106,9 +109,11 @@ Macs.
 - **iOS, iPadOS, or web access.** Stickies is a Mac application; there is
   nothing to sync to.
 - **Notes.app, Reminders, or any other note store.** Stickies only.
-- **Mac App Store distribution.** Reading another application's container needs
-  Full Disk Access, which a sandboxed app cannot have. This closes the door on
-  the App Store permanently, not just for v1.
+- **Mac App Store distribution.** The App Sandbox forbids reading another
+  application's container, whatever TCC does or does not require, and no
+  entitlement the App Store accepts lifts that. This closes the door permanently,
+  not just for v1. (It is the sandbox that closes it, not Full Disk Access —
+  reading the container turns out to need no TCC grant at all.)
 - **Signing, notarization, an auto-updater, a crash reporter, or an onboarding
   wizard.** v1 is built from source by its user.
 - **Real-time collaborative editing.** No character-level merge of rich text.

@@ -179,6 +179,12 @@ in step, such as iCloud Drive or a Syncthing folder. The folder is remembered
 after the first `--folder`. Each Mac writes only its own subtree, so the service
 moving the files never has to resolve anything itself.
 
+**If that folder is in iCloud Drive, right-click it in Finder and choose "Keep
+Downloaded", on every Mac.** With Optimize Mac Storage on — which is the default —
+iCloud may evict files from it, and an evicted file is indistinguishable from a
+missing one to this tool. An evicted record means a note that never arrives; an
+evicted manifest means a Mac that silently stops appearing as a peer at all.
+
 Nothing syncs until the Mac has a vault key. Create one on your first Mac with
 `vault init`; every other Mac gets it by pairing, which takes three commands and
 your being at both machines:
@@ -222,6 +228,7 @@ sandbox forbids reading another application's container regardless of TCC.
 
 v0.6.0 — Milestones 0 through 5 of 7 complete, and the two that remain are
 optional. Notes sync between Macs, verified between two real ones, and the sync
-folder now holds nothing readable. Both real Macs were migrated and paired over
-iCloud Drive on 2026-08-19. Progress is in [ROADMAP.md](ROADMAP.md); what shipped
-is in [CHANGELOG.md](CHANGELOG.md).
+folder now holds nothing readable. Both real Macs were migrated, paired, and seen
+exchanging notes sealed in both directions over iCloud Drive on 2026-08-19.
+Progress is in [ROADMAP.md](ROADMAP.md); what shipped is in
+[CHANGELOG.md](CHANGELOG.md).

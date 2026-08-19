@@ -3,9 +3,9 @@
 Milestone 5 shipped as v0.6.0 on 2026-08-19: notes sync between Macs over a
 shared folder that holds nothing readable, with conflicts resolved into visible
 copies and a `launchd` agent to run it. Convergence is verified between two
-simulated Macs and between two real ones, and both real Macs were migrated and
-paired over iCloud Drive on 2026-08-19 — though no note has yet travelled between
-them sealed, since both containers are empty. A milestone is
+simulated Macs and between two real ones, and both real Macs were migrated,
+paired, and observed exchanging notes sealed in both directions over iCloud Drive
+on 2026-08-19. A milestone is
 done when its capability works end to end, its tests pass, the six project
 documents match the code, and the user has reviewed it. Milestones 6 and 7 are
 marked optional: v1 is complete without them (see the non-goals in

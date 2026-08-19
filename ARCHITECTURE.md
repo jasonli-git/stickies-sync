@@ -664,6 +664,19 @@ the exchange is arithmetic an attacker can also do.
 - **A peer that vanishes is never forgotten.** Its `devices/<id>/` subtree stays
   in the folder and its counters stay in every vector. Harmless but untidy, and
   there is no `forget-device` command.
+- **An evicted iCloud file is indistinguishable from a missing one.** iCloud
+  Drive's "Optimize Mac Storage" may evict files from the sync folder — it is on
+  by default, and was on when this was written. `FolderTransport.record` reads with
+  `try? Data(contentsOf:)`, so an evicted record reads as absent and is reported as
+  "has not arrived yet" on every pass; an evicted *manifest* is worse, because
+  `peerManifests` skips it and the peer disappears with no indication that it ever
+  existed. Modern macOS often stores evicted files as dataless files that fault in
+  on read, which would confine this to an offline Mac, but that has not been
+  measured here. The workaround is Finder's "Keep Downloaded" on the folder, per
+  Mac. The fix is for the transport to ask: check
+  `URLUbiquitousItemDownloadingStatusKey`, call
+  `FileManager.startDownloadingUbiquitousItem(at:)`, and report "downloading"
+  rather than "absent" — a distinction the code cannot currently draw.
 - **Convergence is verified between two simulated Macs and, since 2026-08-18,
   between two real ones** over iCloud Drive, in both directions and through a
   display-configuration change. Still unexercised: clock skew changing the

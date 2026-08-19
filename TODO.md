@@ -371,10 +371,35 @@ published by anything that lacks the key is refused rather than applied.
   every new exec die with SIGKILL (fixed by `rm` first, so the copy lands on a
   fresh inode), and once when a Mac looked unmigrated because its agent was still
   the old build. Any install instructions have to end with restarting the agent.
-- [ ] Watch an actual note travel sealed between the two Macs. Nothing has yet:
-      both containers are empty, so the four records exchanged are all tombstones
-      from the deleted test notes. The mechanism is verified, note content crossing
-      it is not.
+- [x] Watched a note travel sealed between the two Macs, both directions,
+      2026-08-19. One note authored on each; both Macs ended holding both, six
+      records each, agreeing. Milestone 5 is verified on real hardware end to end.
+- Note: **iCloud delivered the manifest about three minutes before the record.**
+  The mini logged `jasons-macbook-pro.local lists 20C5F129 but its record has not
+  arrived yet` and adopted the note on the pass after it landed. The publish order
+  (records first, manifest last) is what keeps that survivable, but it only governs
+  the order of *writes* — what iCloud does with them afterwards is its own affair,
+  and a manifest can outrun its records by minutes. Worth remembering before
+  diagnosing a note that "has not synced": give it a few minutes first.
+- Note: relaunching Stickies after an apply repositioned the local note
+  (`8,1110` → `706,1101`) and the next pass reported
+  `~ moved (stays on this Mac)` without publishing anything. #44 working
+  unprompted on real hardware, in the exact scenario that motivated it.
+- Note: **"Keep Downloaded" is now set on the sync folder on both Macs.** iCloud's
+  Optimize Mac Storage was on, and an evicted file is indistinguishable from an
+  absent one to `FolderTransport` — an evicted manifest would make a peer vanish
+  silently. Recorded as a limitation in [ARCHITECTURE.md](ARCHITECTURE.md); the
+  real fix is for the transport to ask whether a file is merely undownloaded and
+  request it, rather than treating every unreadable file as missing.
+- [ ] **A pass that only warns is logged as nothing at all.** `SyncRunner.run`
+      guards on `outcome.didAnything || label != nil`, and `didAnything` counts
+      adopted notes and local changes but not warnings — so a pass that finds a
+      peer it cannot open, or has its apply refused because Stickies is frontmost,
+      prints nothing. Found by watching the log stay silent for three minutes while
+      a note was waiting on iCloud. Same fault as the one-shot `sync` path fixed in
+      0.6.0, in the path that was not checked. The fix has to log a *change* in the
+      warning set rather than every pass, or a permanently unpaired peer would
+      write a line every thirty seconds forever.
 
 - Note: the code is twelve characters, not the eight first sketched. The attack
   it defends against is grinding a keypair whose code matches the one about to be

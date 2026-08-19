@@ -222,7 +222,6 @@ sandbox forbids reading another application's container regardless of TCC.
 
 v0.6.0 — Milestones 0 through 5 of 7 complete, and the two that remain are
 optional. Notes sync between Macs, verified between two real ones, and the sync
-folder now holds nothing readable. The encryption has been driven end to end
-through the real CLI on one machine; across two real Macs it is still to do.
-Progress is in [ROADMAP.md](ROADMAP.md); what shipped is in
-[CHANGELOG.md](CHANGELOG.md).
+folder now holds nothing readable. Both real Macs were migrated and paired over
+iCloud Drive on 2026-08-19. Progress is in [ROADMAP.md](ROADMAP.md); what shipped
+is in [CHANGELOG.md](CHANGELOG.md).

@@ -349,15 +349,32 @@ published by anything that lacks the key is refused rather than applied.
       idle pass still writing zero bytes — 216 tests
 - [x] The whole flow driven through the real CLI with two synthetic Macs,
       including the wrong-code refusal
-- [ ] Verified across the two real Macs — **half done, 2026-08-19.** The mini
-      migrated against the real iCloud folder: `vault init`, agent restarted, its
-      four records republished as sealed `.rec` files under opaque names, and its
-      old plaintext `.plist` records pruned by that first publish exactly as
-      designed. It refuses the laptop by name — `ignoring what 8C9EF3BF… published
-      — this is not sealed data — it looks like a record from before encryption` —
-      and `vault status` exits non-zero. Outstanding: the laptop's own migration,
-      and pairing between two real Macs, which is the half a single machine cannot
-      test.
+- [x] Verified across the two real Macs, 2026-08-19, over the real iCloud folder.
+      The mini ran `vault init` and republished its four records as sealed `.rec`
+      files under opaque names, its plaintext `.plist` records pruned by that same
+      first publish. The laptop was paired through the folder: `pair request` on
+      it, `pair approve --code SEBP-3FG3-6BZA` on the mini with the code read off
+      the laptop's screen, `pair complete` back on the laptop, which cleaned up its
+      own `pairing/` subtree. Both then reported `4 record(s) readable` of each
+      other, exit 0.
+- Note: the migration window behaved exactly as designed, and it was visible.
+  Between `pair complete` and the laptop's agent restarting, the laptop still had
+  0.5.4 running from the old inode and was still publishing plaintext; the mini
+  reported `CANNOT OPEN: this is not sealed data — it looks like a record from
+  before encryption`, named the device, and applied none of it. It cleared itself
+  when the laptop's agent came up on 0.6.0 and resealed. A peer that cannot be
+  authenticated is refused and *named*, which is the behaviour the milestone
+  exists for.
+- Note: replacing `~/bin/stickiesctl` does not replace the *running* agent — it
+  keeps executing the old inode until `launchctl bootout`/`bootstrap`. Cost an
+  afternoon of confusion twice over: once when a `cp` over the running binary made
+  every new exec die with SIGKILL (fixed by `rm` first, so the copy lands on a
+  fresh inode), and once when a Mac looked unmigrated because its agent was still
+  the old build. Any install instructions have to end with restarting the agent.
+- [ ] Watch an actual note travel sealed between the two Macs. Nothing has yet:
+      both containers are empty, so the four records exchanged are all tombstones
+      from the deleted test notes. The mechanism is verified, note content crossing
+      it is not.
 
 - Note: the code is twelve characters, not the eight first sketched. The attack
   it defends against is grinding a keypair whose code matches the one about to be

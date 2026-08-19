@@ -25,14 +25,25 @@ marked optional: v1 is complete without them (see the non-goals in
 
 ## Post-v1 (not scheduled)
 
-- Optional Markdown interoperability — `.md` import and export, converted through
-  `NSAttributedString`, as a bridge to other tools. The rich-text package stays
-  the canonical representation and Markdown never enters the sync path, so it
-  costs ordinary syncing nothing. That separation is also what makes it safe:
-  converting through `NSAttributedString` is lossy in exactly the way
-  [ARCHITECTURE.md](ARCHITECTURE.md) #13 refuses for replication, and it is only
-  acceptable here because the result is handed to the user rather than written
-  back over the bytes a note is made of
+- Optional Markdown interoperability — `.md` import and export as a bridge to
+  other tools, converted through `NSAttributedString`. The rich-text package
+  stays canonical and Markdown never enters the sync path, so it costs ordinary
+  syncing nothing. Four things worth knowing before starting:
+  - The two directions are not the same size of job. Foundation parses Markdown
+    into an `NSAttributedString` for free; it will not write one back out —
+    `NSAttributedString.DocumentType` has `.rtf`, `.rtfd`, `.html` and `.plain`
+    and no Markdown. Import is small. Export means walking attribute runs and
+    emitting the markup, or going through the HTML that AppKit *will* write.
+  - Attachments are most of the export design. An `.rtfd` package can hold
+    images, and Markdown has to either link them as files written alongside,
+    inline them as data URIs, or drop them and say so.
+  - A Markdown library would be the second third-party dependency, against #10
+    keeping it at one. Worth deciding deliberately rather than in passing.
+  - **Do not extend this to editing a note as Markdown and saving it back.**
+    Export loses what Markdown cannot express, which is fine when the result
+    goes to the user; writing it back over a note's bytes is the lossy round
+    trip [ARCHITECTURE.md](ARCHITECTURE.md) #13 exists to refuse, and every
+    rewritten note would replicate as a genuine edit to every Mac.
 - Character-level merge of rich text, replacing conflict copies where the change
   is unambiguous
 - Syncing Stickies application preferences (default colour, translucency)

@@ -520,12 +520,20 @@ is what stops the two Macs from rediscovering the same conflict on every pass.
 - **Whether the container needs a Full Disk Access grant is unresolved** (#51).
   Two Macs disagree, and the difference is not explained. Grant it and the
   question goes away; the code no longer claims either answer.
-- **Nobody has yet confirmed the agent survives a reboot.** Installing it inside
-  a session that already holds Full Disk Access proves nothing about the case
-  that matters: `launchd` starting the job at login with no granted process
-  anywhere in the chain. The failure mode if it does bite is a permission error
-  every thirty seconds into the log, which is why the banner states readability in
-  its opening lines.
+- **The agent survives a reboot** — verified 2026-08-18 on the laptop. A cold
+  `launchd` start at login, with no terminal and no granted process anywhere in
+  the chain, logged `container: readable`, completed its initial pass and resolved
+  its peer. The prediction that it would fail was wrong twice: first that it would
+  not work at all, then that it only worked by inheriting from the process that
+  bootstrapped it.
+- **Container access was observed to lapse once, mid-session, unexplained.** On
+  the laptop, reads began failing with `Operation not permitted` with nobody
+  touching System Settings, and recovered when Full Disk Access was granted.
+  Neither Mac can reconstruct the transition. The reboot result does not rule this
+  out recurring — it only shows the agent starts correctly. If it does recur the
+  agent keeps running and keeps failing, and the per-pass errors in
+  `~/Library/Logs/StickiesSync.log` are the only thing that will say so. Silence
+  in that log is not proof of syncing; the absence of errors is.
 - **Doctor counts state entries without reading them.** It checks only that
   `.SavedStickiesState` parses as an array; the entries themselves are parsed by
   `StickiesReader`, so `list` and `export` will report a malformed entry that

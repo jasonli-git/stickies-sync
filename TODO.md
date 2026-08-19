@@ -266,7 +266,23 @@ Working list for the current milestone. Longer-horizon items live in
   folder and its counters stay in every vector. Harmless, untidy, and there is
   no `forget-device` command.
 
-- [ ] **Confirm the agent survives a reboot.** Installing it inside a session that
+- [x] **The agent survives a reboot** — verified on the laptop 2026-08-18: cold
+      `launchd` start at login, new pid, no granted ancestor, `container:
+      readable`, initial pass completed, peer resolved, and zero occurrences of
+      `denied`, `permission` or `NOT READABLE` in the whole log. Milestone 4's last
+      open question, closed.
+- Note: the prediction that the agent would fail was wrong twice over — first
+  that it would not work at all, then that it only worked by inheriting from the
+  process that bootstrapped it. What survived was the request behind it rather
+  than the diagnosis: the install preflight and the `container:` banner line exist
+  because of it, and they turn this from an afternoon of probing into a one-glance
+  check.
+- Note: container access lapsed once mid-session on the laptop with nobody
+  touching System Settings, and neither Mac can reconstruct why. Today's green
+  result does not rule out a recurrence; it only shows the agent starts correctly.
+  Worth glancing at `~/Library/Logs/StickiesSync.log` occasionally rather than
+  assuming silence means syncing.
+- [x] ~~Confirm the agent survives a reboot.~~ Installing it inside a session that
       already holds Full Disk Access proves nothing: `launchd` starting the job at
       login, with no granted process anywhere in the chain, is the case that could
       fail. Reinstall, reboot, read the first lines of

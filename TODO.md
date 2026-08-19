@@ -268,15 +268,16 @@ Working list for the current milestone. Longer-horizon items live in
 
 ## Parked / needs user input
 
-- [SPEC.md](SPEC.md) needs a decision now that geometry is machine-local. F2
-  lists "window frame … and z-order" among what to capture, and the
-  user-experience section says notes "vanish and reappear in place". Both are
-  still true *within* one Mac, and neither is true across Macs any more. Say the
-  word and F2 gets split into synced and machine-local halves.
+- Done 2026-08-18: F2 split into F2 (replicated: text, formatting, attachments,
+  colour, translucency, float-on-top) and F2a (captured but machine-local: frame,
+  expanded state, multi-screen frames, z-order). The vision paragraph and a new
+  user-experience bullet say the same. The "vanish and reappear in place" line was
+  left alone on inspection — it describes the receiving Mac, where a note now
+  reappears in place more reliably than before, so it was never wrong.
 
-- [SPEC.md](SPEC.md) says StickiesSync "requires Full Disk Access to read another
-  application's container", and gives that as the reason the Mac App Store is out
-  of scope. Measurement contradicted the first half (ARCHITECTURE #19): no
+- **Still open.** [SPEC.md](SPEC.md) says StickiesSync "requires Full Disk Access
+  to read another application's container", and gives that as the reason the Mac
+  App Store is out of scope. Measurement contradicted the first half (ARCHITECTURE #19): no
   permission is needed. The App Store conclusion still holds, but because of the
   sandbox. The spec is only edited on request — say the word and both sentences
   get corrected.

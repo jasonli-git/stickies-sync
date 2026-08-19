@@ -11,8 +11,9 @@ An "iCloud for Stickies" that does not require a proprietary cloud backend.
 Apple's Stickies app has no synchronization. A note written on one Mac exists
 only on that Mac. StickiesSync is a background utility that keeps Stickies
 consistent across several Macs owned by the same person, moving individual notes
-— their text, formatting, colour, size, position, and window state — over a
-transport the user chooses and controls.
+— their text, formatting, colour, and appearance — over a transport the user
+chooses and controls. Where each note *sits* stays with the Mac it was arranged
+on; see F2a.
 
 It understands *notes*, not files. A whole-directory copy cannot tell which of
 two divergent copies of a note is newer, cannot merge, and cannot recover a note
@@ -60,6 +61,13 @@ experience is that Stickies simply matches across their Macs.
   Macs since they last spoke, one version stays in place and the other appears
   as a new sticky marked as a conflict copy. The user resolves it by reading
   both and deleting one. Nothing is decided silently.
+- **Each Mac keeps its own layout.** Where a note sits is not synchronized. A
+  frame that suits a 27-inch display is off the edge of a laptop, and Stickies
+  rewrites frames it dislikes without being asked, so replicating position drags
+  every Mac's layout down to the smallest screen in use. A note arriving somewhere
+  new is placed where the sender had it, and is the receiving Mac's to arrange
+  after that. Colour, translucency and float-on-top do travel — nothing but the
+  user ever changes those.
 - **Deleted notes are recoverable** from the command line for as long as history
   is retained.
 - **Nothing happens without permission.** The utility requires Full Disk Access
@@ -74,7 +82,8 @@ be complete.
 | # | Requirement |
 |---|-------------|
 | F1 | Enumerate the notes in the local Stickies container as individual objects with stable identities |
-| F2 | Capture per-note text, rich formatting, embedded attachments, colour, translucency, window frame, expanded/collapsed state, multi-screen frames, and z-order |
+| F2 | Replicate per-note text, rich formatting, embedded attachments, colour, translucency, and float-on-top. These describe the note itself and are the same on every Mac |
+| F2a | Capture window frame, expanded/collapsed state, multi-screen frames, and z-order, but treat them as **belonging to the Mac they were set on** rather than to the note. A note arriving somewhere for the first time is placed where the sender had it; from then on each Mac keeps its own layout, and moving a window never affects another Mac |
 | F3 | Detect a change to any single note without rescanning or resending the others |
 | F4 | Apply a remote note to the local container without corrupting Stickies' state, and without losing concurrent local work |
 | F5 | Back up the container before every write, and roll back if a write fails partway |

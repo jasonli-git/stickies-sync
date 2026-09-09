@@ -15,8 +15,9 @@ do and [ARCHITECTURE.md](ARCHITECTURE.md) for how it is built.
 
 Milestones 0 through 5 are complete: notes sync between Macs over a shared
 folder, encrypted end to end, with version history, deleted-note recovery, and
-visible conflict copies. The remaining items are optional — a menu-bar app and
-more transports — and are tracked in [ROADMAP.md](ROADMAP.md).
+visible conflict copies. That is the whole of the v1 scope. What is scheduled
+next is not more features but the hardening that a 1.0.0 release should stand
+on, and it is tracked in [ROADMAP.md](ROADMAP.md).
 
 - **Health check** *(built)* — `stickiesctl doctor` locates the Stickies
   container, reports whether it can be read, counts note packages, checks that
@@ -226,9 +227,10 @@ sandbox forbids reading another application's container regardless of TCC.
 
 ## Status
 
-v0.6.1 — Milestones 0 through 5 of 7 complete, and the two that remain are
-optional. Notes sync between Macs, verified between two real ones, and the sync
-folder now holds nothing readable. Both real Macs were migrated, paired, and seen
-exchanging notes sealed in both directions over iCloud Drive on 2026-08-19.
-Progress is in [ROADMAP.md](ROADMAP.md); what shipped is in
+v0.6.1 — the v1 scope is complete, and 1.0.0 is deliberately not released yet.
+Notes sync between Macs, verified between two real ones, and the sync folder now
+holds nothing readable. Both real Macs were migrated, paired, and seen exchanging
+notes sealed in both directions over iCloud Drive on 2026-08-19. What 1.0.0 is
+waiting on is Milestone 8, which closes the ways this can still lose a note or
+fail quietly. Progress is in [ROADMAP.md](ROADMAP.md); what shipped is in
 [CHANGELOG.md](CHANGELOG.md).

@@ -102,6 +102,7 @@ keeps an updated Mac talking to one that has not updated yet.
 | 57 | Encryption is mandatory; there is no unencrypted mode | SPEC.md F13 asks that a transport the user does not control never sees plaintext, and principle 6 says to degrade to inaction. A "just this once" flag is exactly the kind that stays on. Enforced by the type system rather than a check: `SealedChannel` cannot be built without a `Vault`. The cost is a migration with an order to it — every Mac needs the key before it can sync again — and it is paid once, loudly, with the remedy named in the refusal |
 | 58 | Pairing is verified by a code the user carries between the two Macs, not by anything in the folder | Anything with write access to the folder can publish a pairing request of its own and be handed the vault, so the folder cannot establish who is asking. A person standing at both Macs can. Twelve characters rather than eight, because the attack is grinding a keypair whose code matches the one about to be read out, and 40 bits of that is hours of GPU time where 60 bits is not. The reverse direction is deliberately unverified: an attacker who replaces the *grant* cannot produce the vault key, so the joining Mac ends up unable to open anything — a denial of service, not a compromise, provided it is loud, which is why `pair complete` and `vault status` count what actually opens |
 | 36 | A tombstone row carries no content of its own | The version recorded before the deletion already holds it, and duplicating it would double the storage for every deleted note. `newestRecoverableVersion` skips deletions to find it |
+| 59 | The recovery procedure is a section of [README.md](README.md), not a seventh document | The doc set is six files, each answering one question, and a `RUNBOOK.md` would answer "how do I run it" alongside the file that already does. What a person needs when syncing has gone wrong is also what they need when setting it up — which Mac holds the key, what `vault status` means, what a conflict copy is — so the remedies belong next to the commands rather than in a document nobody opens until the bad day. Rejected: this file, because a decisions log explains why the system is shaped as it is and interleaving step-by-step recovery would wreck that; and [TODO.md](TODO.md), which is a worklist and would make the procedure disappear when the work closed |
 
 ## Module Layout
 
@@ -701,3 +702,64 @@ the exchange is arithmetic an attacker can also do.
 - **The FSEvents tests are the only timing-dependent tests in the suite.** They
   wait on a semaphore with a ten-second deadline rather than sleeping, but they
   do depend on a real system service delivering events.
+- **The version vectors are only as durable as one unreplicated file.** Every
+  counter lives in `replica.sqlite3` under Application Support, and the device row
+  is written once and never rewritten (`Replica.swift:110`) because the whole
+  history refers to it. Delete that file and the next open generates a new
+  `DeviceID`, republishes every note at sequence 1, and — the sticky identifiers
+  being unchanged while the peers still hold the old device's counters — produces
+  a conflict copy for every note on the Mac, plus an abandoned subtree in the
+  folder. Restore it from a backup and the device ID survives while the counters
+  rewind, so this Mac re-issues sequences it has already spent on different
+  content and every peer ignores what it publishes from then on, with no symptom
+  anywhere. Nothing detects either case. The fix — a regenerated incarnation value
+  in the manifest, and a published-sequence high-water mark kept outside the
+  database — is Milestone 8 in [ROADMAP.md](ROADMAP.md).
+- **Nothing tells a wholesale container substitution from a large edit.** A Time
+  Machine restore of the Stickies container, a migration, or a container copied
+  between Macs by hand reconciles as a genuine edit to every note at once, is
+  published, and overwrites newer versions on every other Mac. The
+  empty-container case is the one Milestone 8 names explicitly; this is the same
+  fault with a non-empty read, and the guard that would cover both is a
+  proportion rather than a special case.
+- **An apply interrupted mid-cycle leaves no record of itself.** The backup,
+  write, rollback and relaunch sequence in `ApplyCoordinator` is in-process, so a
+  SIGKILL, a crash, a log-out or a power cut between the quit and the relaunch
+  leaves the container written halfway, a backup nobody will restore, and Stickies
+  quit with nothing recording that this tool quit it. Not observed; nothing would
+  report it if it had been. A sentinel written before the quit and cleared after
+  the relaunch is the fix, and it can share the process lockfile.
+- **The agent's log is never rotated.** The `launchd` job sends stdout and stderr
+  to `~/Library/Logs/StickiesSync.log` (`AgentCommand.swift:81`) and nothing caps
+  or rolls it. `PassReporter` removes most of what would otherwise repeat, but two
+  documented conditions — a note that stays unreadable, a recurrence of the
+  access lapse — warn until a human intervenes, and the file is append-only across
+  reboots.
+- **The vault key has no second copy anywhere.** It exists as a file on each
+  paired Mac and nowhere else: there is no escrow, no printed recovery code, and
+  no way to produce one. Losing it on every Mac loses the folder's contents, which
+  is above; the nearer case is the Mac that held it dying, because `pair approve`
+  has to run on a Mac that still has the key, so pairing cannot rebuild what no
+  surviving Mac can read. `vault export`/`vault import` is Milestone 10.
+- **Nothing records which macOS build the format was verified against.** The
+  goldens were captured on macOS 26.6.1 and that number appears in this document
+  and nowhere in the code. F14's refusals are all per-entry and per-key at read
+  time; none of them notices that the platform underneath changed, so an OS update
+  that moves the format is detected only if it happens to move it in a way a
+  parser rejects. Milestone 15.
+- **The suite is run by hand, on one Mac, and injects no faults.** 225 tests
+  behind `make check`, invoked manually, on the Mac whose CLT-only toolchain the
+  Makefile works around (#11); nothing runs them on a schedule, and the second Mac
+  — the only other machine with a real container — runs them never. There is also
+  no fault injection: `ENOSPC` while the container backup is taken, a read-only
+  volume, and the `EINTR` that actually happened and produced #53 are all
+  reachable through the `FileManager` seam `--home` already uses, and none is
+  exercised.
+- **Two Macs on different versions of StickiesSync is handled but undocumented.**
+  `SyncRecord` and `DeviceManifest` both refuse a `FormatVersion` above their own
+  and the refusal is reported by name, which is the correct behaviour and was
+  watched working during the 0.6.0 migration. What is missing is the procedure:
+  nothing tells the user to update every Mac together, or what the resulting
+  "cannot open" lines mean while one is still behind, and the asymmetry is easy to
+  misread — the older Mac is the one that goes quiet, not the one that was
+  updated.

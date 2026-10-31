@@ -212,6 +212,26 @@ stops it being handed your key.
 records it can actually open — worth running when syncing has gone quiet, since a
 Mac with the wrong key looks exactly like a Mac with nothing to do.
 
+The key exists only as a file on the Macs that hold it. There is no escrow and no
+recovery code, and `pair approve` has to run on a Mac that still has the key — so
+if the only Mac holding it dies, its replacement cannot be paired and the folder's
+contents are unreadable. The notes themselves are unaffected; they live in
+Stickies on every Mac that was syncing. Until `vault export` exists
+([ROADMAP.md](ROADMAP.md), Milestone 10), keeping a second Mac paired *is* the
+backup of the key.
+
+**Update every Mac together.** A record or manifest written by a newer
+StickiesSync is refused by an older one — by name, with the version in the
+message — rather than guessed at. The asymmetry is easy to misread: the Mac that
+goes quiet is the one that is *behind*, not the one you updated. Rebuild it and
+restart its agent, since replacing the binary does not replace the running agent
+— it keeps executing the old inode until the job is reloaded. Reinstalling does
+both, with whatever `--executable` you installed it with:
+
+```bash
+make release && swift run stickiesctl agent install --executable .build/release/stickiesctl
+```
+
 Every command takes `--home <path>` to read a synthetic container instead of the
 real one, which is how the test suite exercises them.
 
